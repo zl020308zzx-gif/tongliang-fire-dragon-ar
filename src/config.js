@@ -211,8 +211,10 @@ export const PAGE1_PREVIEW_CONFIG = {
     trackingSmoothing: {
       positionLerp: 0.12,
       rotationSlerp: 0.1,
+      scaleLerp: 0.15,
       positionDeadzone: 0.002,
       rotationDeadzoneDeg: 0.35,
+      scaleDeadzone: 0.001,
       lostHoldDuration: 250,
       recoverDuration: 300,
     },

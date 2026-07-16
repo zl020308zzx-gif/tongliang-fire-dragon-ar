@@ -52,8 +52,8 @@ const arDebugPanel = (mode, config) => {
   if (mode === 'hints') return `<aside class="debug-panel ar-debug-panel"><p>页面状态 <strong data-hint-debug-state>AR_NOT_STARTED</strong></p><p>targetTracked <strong data-hint-debug-tracked>false</strong></p><p>craftCanvasVisible <strong data-hint-debug-visible>false</strong></p><p>panelReady <strong data-hint-debug-ready>false</strong></p><p>canvasScreenRect <strong data-hint-debug-rect>—</strong></p><p>hintVisible <strong data-hint-debug-hint>false</strong></p><p>hintScreenX <strong data-hint-debug-x>—</strong></p><p>hintScreenY <strong data-hint-debug-y>—</strong></p><p>隐藏原因 <strong data-hint-debug-reason>AR尚未开始</strong></p></aside>`
   if (mode === 'tracking') return `<aside class="debug-panel ar-debug-panel"><p>arReady <strong data-ar-debug-ready>false</strong></p><p>targetTracked <strong data-ar-debug-tracked>false</strong></p><p>targetFound次数 <strong data-ar-debug-found>0</strong></p><p>targetLost次数 <strong data-ar-debug-lost>0</strong></p><p>丢失持续 <strong data-ar-debug-lost-duration>0 ms</strong></p><p>恢复状态 <strong data-ar-debug-resume>—</strong></p><p>视频暂停 <strong data-ar-debug-video-paused>false</strong></p><p>Canvas保留 <strong data-ar-debug-canvas>true</strong></p><p>MindAR状态 <strong data-ar-debug-mindar>AR_NOT_STARTED</strong></p></aside>`
   if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel ar-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>panelSurfaceZ <strong data-debug-explode-panel>${config.explodedView.panelSurfaceZ}</strong></p><p>frontDirectionSign <strong data-debug-explode-sign>${config.explodedView.frontDirectionSign}</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><p data-debug-explode-warning>等待图层状态</p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre></aside>`
-  if (mode === 'stabilize') return `<aside class="debug-panel ar-debug-panel stabilize-debug"><p>rawTargetPosition <strong data-stable-raw-position>—</strong></p><p>stableAnchorPosition <strong data-stable-position>—</strong></p><p>rawQuaternion <strong data-stable-raw-quaternion>—</strong></p><p>stableQuaternion <strong data-stable-quaternion>—</strong></p><p>positionDelta <strong data-stable-position-delta>0</strong></p><p>rotationDeltaDeg <strong data-stable-rotation-delta>0</strong></p><p>positionLerp <strong>${config.ar.trackingSmoothing.positionLerp}</strong></p><p>rotationSlerp <strong>${config.ar.trackingSmoothing.rotationSlerp}</strong></p><p>targetTracked <strong data-stable-tracked>false</strong></p><p>lostHoldRemaining <strong data-stable-lost-hold>0 ms</strong></p></aside>`
-  if (mode === 'mode') return `<aside class="debug-panel ar-debug-panel mode-debug"><p>displayMode <strong data-mode-current>—</strong></p><p>panel局部位置 <strong data-mode-local-position>—</strong></p><p>panel局部旋转 <strong data-mode-local-rotation>—</strong></p><p>panel世界位置 <strong data-mode-world-position>—</strong></p><p>MODE_SELECT <strong data-mode-selecting>false</strong></p><pre data-mode-targets>${JSON.stringify(config.ar.arPanel.modes, null, 2)}</pre></aside>`
+  if (mode === 'stabilize') return `<aside class="debug-panel ar-debug-panel stabilize-debug"><p>rawTargetPosition <strong data-stable-raw-position>—</strong></p><p>stableAnchorPosition <strong data-stable-position>—</strong></p><p>rawQuaternion <strong data-stable-raw-quaternion>—</strong></p><p>stableQuaternion <strong data-stable-quaternion>—</strong></p><p>rawTargetScale <strong data-stable-raw-scale>—</strong></p><p>stableAnchorScale <strong data-stable-scale>—</strong></p><p>scaleDelta <strong data-stable-scale-delta>0</strong></p><p>positionDelta <strong data-stable-position-delta>0</strong></p><p>rotationDeltaDeg <strong data-stable-rotation-delta>0</strong></p><p>positionLerp <strong>${config.ar.trackingSmoothing.positionLerp}</strong></p><p>rotationSlerp <strong>${config.ar.trackingSmoothing.rotationSlerp}</strong></p><p>scaleLerp <strong>${config.ar.trackingSmoothing.scaleLerp}</strong></p><p>targetTracked <strong data-stable-tracked>false</strong></p><p>stableAnchorExists <strong data-stable-exists>false</strong></p><p>stableAnchorVisible <strong data-stable-visible>false</strong></p><p>stableAnchorParent <strong data-stable-parent>—</strong></p><p>stableAnchorParentScale <strong data-stable-parent-scale>—</strong></p><p>rawPoseValid <strong data-stable-pose-valid>false</strong></p><p>rawScaleValid <strong data-stable-scale-valid>false</strong></p><p>firstValidFullTransformReceived <strong data-stable-first-transform>false</strong></p><p>panelHingeVisible <strong data-stable-hinge-visible>false</strong></p><p>panelContentVisible <strong data-stable-content-visible>false</strong></p><p>craftPanelVisible <strong data-stable-panel-visible>false</strong></p><p>craftCanvasVisible <strong data-stable-canvas-visible>false</strong></p><p>lostHoldRemaining <strong data-stable-lost-hold>0 ms</strong></p><p class="ar-scale-warning" data-stable-scale-warning hidden>AR content scale is too small</p></aside>`
+  if (mode === 'mode') return `<aside class="debug-panel ar-debug-panel mode-debug"><p>displayMode <strong data-mode-current>—</strong></p><p>panel局部位置 <strong data-mode-local-position>—</strong></p><p>panel局部旋转 <strong data-mode-local-rotation>—</strong></p><p>panel世界位置 <strong data-mode-world-position>—</strong></p><p>panelContentScale <strong data-mode-content-scale>—</strong></p><p>panelWorldScale <strong data-mode-panel-world-scale>—</strong></p><p>craftPanelWorldScale <strong data-mode-craft-world-scale>—</strong></p><p>panel距离摄像机 <strong data-mode-camera-distance>—</strong></p><p>面板预计屏幕尺寸 <strong data-mode-screen-size>—</strong></p><p>scale过小不可见 <strong data-mode-scale-too-small>false</strong></p><p>MODE_SELECT <strong data-mode-selecting>false</strong></p><p class="ar-scale-warning" data-mode-scale-warning hidden>AR content scale is too small</p><pre data-mode-targets>${JSON.stringify(config.ar.arPanel.modes, null, 2)}</pre></aside>`
   if (mode === 'state') return `<aside class="debug-panel state-debug-panel ar-debug-panel"><p>AR状态 <strong data-debug-ar-state>AR_NOT_STARTED</strong></p><p>当前制作状态 <strong data-debug-current-state>LINEART</strong></p><p>上一个状态 <strong data-debug-previous-state>—</strong></p><p>bambooProgress <strong data-debug-state-bamboo>0%</strong></p><p>paperProgress <strong data-debug-state-paper>0%</strong></p><p>paintProgress <strong data-debug-state-paint>0%</strong></p><p>视频状态 <strong data-debug-video>idle</strong></p><p>完成状态 <strong data-debug-completed>false</strong></p><p>page1存储字段 <strong data-debug-storage>—</strong></p><p>旧字段已清理 <strong data-debug-storage-cleaned>false</strong></p><p>需要重新点击竹篾 <strong data-debug-requires-bamboo>true</strong></p></aside>`
   return ''
 }
@@ -239,6 +239,7 @@ export function renderArPage1(root) {
   let bambooClicked = false
   let displayMode = null
   let panelReady = false
+  let pendingPanelRise = false
   let stableDebugState = null
   let panelDebugState = {
     progress: 0,
@@ -263,6 +264,20 @@ export function renderArPage1(root) {
 
   const isCraftCanvasVisible = () =>
     Boolean(craftPlane?.object3D?.visible && craftPlane.getAttribute('visible') !== false)
+
+  const isEntityVisible = (entity) =>
+    Boolean(entity?.object3D?.visible && entity.getAttribute('visible') !== false)
+
+  const setEntityVisible = (entity, visible) => {
+    if (!entity?.object3D) return
+    entity.object3D.visible = visible
+    entity.setAttribute('visible', visible)
+  }
+
+  const confirmCraftVisibility = () => {
+    const entities = [stableAnchor, panelHinge, panelContent, craftPanel, craftPlane]
+    entities.forEach((entity) => setEntityVisible(entity, true))
+  }
 
   const canShowBambooHint = ({ state, bounds, center }) => {
     if (!['LINEART', 'BAMBOO_BUILD'].includes(state)) return { allowed: false, reason: '当前制作状态禁止显示扎骨提示' }
@@ -312,16 +327,81 @@ export function renderArPage1(root) {
 
   const formatArray = (values, digits = 3) => values?.map((value) => Number(value).toFixed(digits)).join(', ') ?? '—'
 
+  const getPanelMetrics = () => {
+    const THREE = window.AFRAME?.THREE
+    const camera = scene.camera
+    const canvas = scene.canvas
+    if (!THREE || !camera || !canvas || !panelContent?.object3D || !craftPanel?.object3D) return null
+
+    const panelWorldPosition = new THREE.Vector3()
+    const cameraWorldPosition = new THREE.Vector3()
+    const panelWorldScale = new THREE.Vector3()
+    const craftPanelWorldScale = new THREE.Vector3()
+    panelContent.object3D.updateWorldMatrix(true, true)
+    craftPanel.object3D.updateWorldMatrix(true, true)
+    panelContent.object3D.getWorldPosition(panelWorldPosition)
+    camera.getWorldPosition(cameraWorldPosition)
+    panelContent.object3D.getWorldScale(panelWorldScale)
+    craftPanel.object3D.getWorldScale(craftPanelWorldScale)
+
+    const box = new THREE.Box3().setFromObject(craftPanel.object3D)
+    const points = []
+    if (!box.isEmpty()) {
+      for (const x of [box.min.x, box.max.x]) {
+        for (const y of [box.min.y, box.max.y]) {
+          for (const z of [box.min.z, box.max.z]) {
+            const point = new THREE.Vector3(x, y, z).project(camera)
+            if (Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)) {
+              points.push({
+                x: (point.x + 1) * 0.5 * canvas.clientWidth,
+                y: (1 - point.y) * 0.5 * canvas.clientHeight,
+              })
+            }
+          }
+        }
+      }
+    }
+
+    const width = points.length ? Math.max(...points.map((point) => point.x)) - Math.min(...points.map((point) => point.x)) : 0
+    const height = points.length ? Math.max(...points.map((point) => point.y)) - Math.min(...points.map((point) => point.y)) : 0
+    const stableScaleTooSmall = stableAnchor.object3D.scale.toArray().some((value) => Math.abs(value) <= 1e-6)
+    const projectedTooSmall = Math.max(width, height) < 2
+    return {
+      panelWorldScale,
+      craftPanelWorldScale,
+      cameraDistance: panelWorldPosition.distanceTo(cameraWorldPosition),
+      screenWidth: width,
+      screenHeight: height,
+      scaleTooSmall: stableScaleTooSmall || projectedTooSmall,
+    }
+  }
+
   const updateStabilizeDebug = (state = stableDebugState) => {
     if (debugMode !== 'stabilize' || !state) return
+    const metrics = getPanelMetrics()
     root.querySelector('[data-stable-raw-position]').textContent = formatArray(state.rawTargetPosition)
     root.querySelector('[data-stable-position]').textContent = formatArray(state.stableAnchorPosition)
     root.querySelector('[data-stable-raw-quaternion]').textContent = formatArray(state.rawQuaternion, 4)
     root.querySelector('[data-stable-quaternion]').textContent = formatArray(state.stableQuaternion, 4)
+    root.querySelector('[data-stable-raw-scale]').textContent = formatArray(state.rawTargetScale, 6)
+    root.querySelector('[data-stable-scale]').textContent = formatArray(state.stableAnchorScale, 6)
+    root.querySelector('[data-stable-scale-delta]').textContent = state.scaleDelta.toFixed(6)
     root.querySelector('[data-stable-position-delta]').textContent = state.positionDelta.toFixed(5)
     root.querySelector('[data-stable-rotation-delta]').textContent = state.rotationDeltaDeg.toFixed(3)
     root.querySelector('[data-stable-tracked]').textContent = String(state.targetTracked)
+    root.querySelector('[data-stable-exists]').textContent = String(state.stableAnchorExists)
+    root.querySelector('[data-stable-visible]').textContent = String(state.stableAnchorVisible)
+    root.querySelector('[data-stable-parent]').textContent = state.stableAnchorParent
+    root.querySelector('[data-stable-parent-scale]').textContent = formatArray(state.stableAnchorParentScale, 6)
+    root.querySelector('[data-stable-pose-valid]').textContent = String(state.rawPoseValid)
+    root.querySelector('[data-stable-scale-valid]').textContent = String(state.rawScaleValid)
+    root.querySelector('[data-stable-first-transform]').textContent = String(state.firstValidFullTransformReceived)
+    root.querySelector('[data-stable-hinge-visible]').textContent = String(isEntityVisible(panelHinge))
+    root.querySelector('[data-stable-content-visible]').textContent = String(isEntityVisible(panelContent))
+    root.querySelector('[data-stable-panel-visible]').textContent = String(isEntityVisible(craftPanel))
+    root.querySelector('[data-stable-canvas-visible]').textContent = String(isEntityVisible(craftPlane))
     root.querySelector('[data-stable-lost-hold]').textContent = `${Math.round(state.lostHoldRemaining)} ms`
+    root.querySelector('[data-stable-scale-warning]').hidden = !(metrics?.scaleTooSmall ?? false)
   }
 
   const updateModeDebug = () => {
@@ -331,6 +411,7 @@ export function renderArPage1(root) {
     const world = new THREE.Vector3()
     panelHinge.object3D.getWorldPosition(world)
     const rotation = panelHinge.object3D.rotation
+    const metrics = getPanelMetrics()
     root.querySelector('[data-mode-current]').textContent = displayMode ?? '—'
     root.querySelector('[data-mode-local-position]').textContent = formatArray(panelHinge.object3D.position.toArray())
     root.querySelector('[data-mode-local-rotation]').textContent = formatArray([
@@ -339,7 +420,18 @@ export function renderArPage1(root) {
       THREE.MathUtils.radToDeg(rotation.z),
     ], 1)
     root.querySelector('[data-mode-world-position]').textContent = formatArray(world.toArray())
+    root.querySelector('[data-mode-content-scale]').textContent = formatArray(panelContent.object3D.scale.toArray(), 6)
+    root.querySelector('[data-mode-panel-world-scale]').textContent = formatArray(metrics?.panelWorldScale?.toArray(), 6)
+    root.querySelector('[data-mode-craft-world-scale]').textContent = formatArray(metrics?.craftPanelWorldScale?.toArray(), 6)
+    root.querySelector('[data-mode-camera-distance]').textContent = Number.isFinite(metrics?.cameraDistance)
+      ? metrics.cameraDistance.toFixed(3)
+      : '—'
+    root.querySelector('[data-mode-screen-size]').textContent = metrics
+      ? `${metrics.screenWidth.toFixed(1)} × ${metrics.screenHeight.toFixed(1)} px`
+      : '—'
+    root.querySelector('[data-mode-scale-too-small]').textContent = String(metrics?.scaleTooSmall ?? false)
     root.querySelector('[data-mode-selecting]').textContent = String(arState === AR_PAGE1_STATES.MODE_SELECT)
+    root.querySelector('[data-mode-scale-warning]').hidden = !(metrics?.scaleTooSmall ?? false)
   }
 
   const updateStorageDebug = () => {
@@ -422,6 +514,11 @@ export function renderArPage1(root) {
 
   const beginPanelRise = () => {
     if (craftStarted || !displayMode || !(lifecycle?.isTracked() ?? false)) return
+    if (!stableAnchorController?.hasValidFullTransform()) {
+      pendingPanelRise = true
+      return
+    }
+    pendingPanelRise = false
     ui.hideModeSelect()
     hotspot.setEnabled(false)
     ui.hideHotspot()
@@ -437,6 +534,7 @@ export function renderArPage1(root) {
 
   const showModeSelect = () => {
     if (craftStarted || arState === AR_PAGE1_STATES.PANEL_RISING) return
+    pendingPanelRise = false
     hotspot.setEnabled(false)
     ui.hideHotspot()
     panelHinge.object3D.visible = false
@@ -463,6 +561,7 @@ export function renderArPage1(root) {
     bambooClicked = false
     craftStarted = false
     panelReady = false
+    pendingPanelRise = false
     resumeArState = AR_PAGE1_STATES.WAIT_BAMBOO
     panelController?.reset()
     panelHinge.object3D.visible = false
@@ -538,8 +637,7 @@ export function renderArPage1(root) {
       onComplete() {
         panelReady = true
         craftStarted = true
-        craftPlane.object3D.visible = true
-        craftPlane.setAttribute('visible', true)
+        confirmCraftVisibility()
         arBridge.startCraft?.('LINEART')
         ui.showCraft()
         setArState(arBridge.getSnapshot?.().currentState ?? 'LINEART')
@@ -555,6 +653,9 @@ export function renderArPage1(root) {
         stableDebugState = state
         updateStabilizeDebug(state)
         updateModeDebug()
+        if (pendingPanelRise && state.firstValidFullTransformReceived && state.targetTracked) {
+          beginPanelRise()
+        }
         const craftState = arBridge.getSnapshot?.().currentState
         if (
           state.targetTracked &&

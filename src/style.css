@@ -376,6 +376,12 @@ canvas {
   color: #75e5a8;
 }
 
+.debug-panel .ar-scale-warning {
+  margin-top: 8px;
+  color: #ff665f;
+  font-weight: 800;
+}
+
 .paint-debug-panel {
   width: 240px;
 }
