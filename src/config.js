@@ -5,6 +5,7 @@ const PAGE1_DIRECTORY = assetUrl('assets/images/page1')
 export const PAGE1_PREVIEW_CONFIG = {
   assets: {
     backgroundBoard: `${PAGE1_DIRECTORY}/craft-panel.png`,
+    bambooBundle: `${PAGE1_DIRECTORY}/bamboo-bundle.png`,
     bambooBuildAudio: assetUrl('assets/audio/bamboo-build.mp3'),
     paperCoverAudio: assetUrl('assets/audio/paper-cover.mp3'),
     paintBrushAudio: assetUrl('assets/audio/paint-brush.mp3'),
