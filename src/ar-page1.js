@@ -3,7 +3,7 @@ import { createArUiController } from './ar-ui-controller.js'
 import { initializePage1Controller } from './page1-controller.js'
 import { createMarkerHotspot } from './marker-hotspot.js'
 import { createTargetLifecycle } from './target-lifecycle.js'
-import { createTiltController } from './tilt-controller.js'
+import { createPanelRiseController } from './tilt-controller.js'
 
 export const AR_PAGE1_STATES = Object.freeze({
   AR_NOT_STARTED: 'AR_NOT_STARTED',
@@ -12,6 +12,7 @@ export const AR_PAGE1_STATES = Object.freeze({
   TARGET_FOUND: 'TARGET_FOUND',
   WAIT_BAMBOO: 'WAIT_BAMBOO',
   WAIT_TILT: 'WAIT_TILT',
+  SHOW_PLACEMENT_GUIDE: 'SHOW_PLACEMENT_GUIDE',
   PANEL_RISING: 'PANEL_RISING',
   TRACKING_PAUSED: 'TRACKING_PAUSED',
 })
@@ -22,7 +23,7 @@ const imageEntity = (assetId, entityConfig, extra = '') => `
   <a-image src="#${assetId}" position="${vector(entityConfig.position)}"
     rotation="${vector(entityConfig.rotation)}" width="${entityConfig.size.width}"
     height="${entityConfig.size.height}"
-    material="transparent: true; alphaTest: 0.01; shader: flat" ${extra}></a-image>
+    material="transparent: true; alphaTest: 0.01; depthWrite: true; depthTest: true; side: double; shader: flat" ${extra}></a-image>
 `
 
 const explodedGroup = (config) => `
@@ -30,12 +31,13 @@ const explodedGroup = (config) => `
     rotation="${vector(config.groupRotation)}" visible="false">
     ${config.layers
       .map(
-        (layer) => `<a-image data-explode-layer="${layer.id}" src="#explode-${layer.id}"
+        (layer) => `<a-image data-explode-layer="${layer.id}" data-render-order="${layer.renderOrder}" src="#explode-${layer.id}"
           position="0 0 0" width="${config.planeSize.width}" height="${config.planeSize.height}"
-          material="transparent: true; alphaTest: 0.01; opacity: 1; shader: flat"></a-image>`,
+          material="transparent: true; alphaTest: 0.01; opacity: 1; depthWrite: false; depthTest: true; side: double; shader: flat"></a-image>`,
       )
       .join('')}
-    <a-plane id="explode-focus-outline" position="0 0 -0.01"
+    <a-plane id="explode-focus-outline" position="0 0 0"
+      data-render-order="21"
       width="${config.planeSize.width + 0.05}" height="${config.planeSize.height + 0.05}"
       material="color: #d7a64a; wireframe: true; transparent: true; opacity: 0.78; shader: flat"
       visible="false"></a-plane>
@@ -44,8 +46,10 @@ const explodedGroup = (config) => `
 
 const arDebugPanel = (mode, config) => {
   if (mode === 'hotspot') return `<aside class="debug-panel ar-debug-panel"><p>识别卡比例 <strong data-ar-debug-aspect>${config.ar.markerAspectFallback}</strong></p><p>点击 UV <strong data-ar-debug-uv>—</strong></p><p>imageX/Y <strong data-ar-debug-image>—</strong></p><p>命中热点 <strong data-ar-debug-hit>—</strong></p><pre>${JSON.stringify(config.ar.bambooHotspot, null, 2)}</pre></aside>`
-  if (mode === 'tilt') return `<aside class="debug-panel ar-debug-panel"><p>目标追踪 <strong data-ar-debug-tracked>false</strong></p><p>初始角度 <strong data-ar-debug-initial>—</strong></p><p>绝对角度 <strong data-ar-debug-angle>—</strong></p><p>变化角度 <strong data-ar-debug-delta>—</strong></p><p>稳定计时 <strong data-ar-debug-stable>0 ms</strong></p><p>panelHinge旋转 <strong data-ar-debug-rotation>—</strong></p><p>满足条件 <strong data-ar-debug-satisfied>false</strong></p></aside>`
+  if (mode === 'tilt' || mode === 'panel') return `<aside class="debug-panel ar-debug-panel"><p>panelHinge世界坐标 <strong data-panel-debug-hinge>—</strong></p><p>panelContent世界坐标 <strong data-panel-debug-content>—</strong></p><p>当前旋转 <strong data-panel-debug-rotation>—</strong></p><p>目标旋转 <strong data-panel-debug-target>—</strong></p><p>frontDirectionSign <strong data-panel-debug-sign>${config.ar.arPanel.frontDirectionSign}</strong></p><p>背景板局部正面方向 <strong data-panel-debug-front>—</strong></p><p>升起进度 <strong data-panel-debug-progress>0%</strong></p></aside>`
+  if (mode === 'hints') return `<aside class="debug-panel ar-debug-panel"><p>页面状态 <strong data-hint-debug-state>AR_NOT_STARTED</strong></p><p>targetTracked <strong data-hint-debug-tracked>false</strong></p><p>craftCanvasVisible <strong data-hint-debug-visible>false</strong></p><p>panelReady <strong data-hint-debug-ready>false</strong></p><p>canvasScreenRect <strong data-hint-debug-rect>—</strong></p><p>hintVisible <strong data-hint-debug-hint>false</strong></p><p>hintScreenX <strong data-hint-debug-x>—</strong></p><p>hintScreenY <strong data-hint-debug-y>—</strong></p><p>隐藏原因 <strong data-hint-debug-reason>AR尚未开始</strong></p></aside>`
   if (mode === 'tracking') return `<aside class="debug-panel ar-debug-panel"><p>arReady <strong data-ar-debug-ready>false</strong></p><p>targetTracked <strong data-ar-debug-tracked>false</strong></p><p>targetFound次数 <strong data-ar-debug-found>0</strong></p><p>targetLost次数 <strong data-ar-debug-lost>0</strong></p><p>丢失持续 <strong data-ar-debug-lost-duration>0 ms</strong></p><p>恢复状态 <strong data-ar-debug-resume>—</strong></p><p>视频暂停 <strong data-ar-debug-video-paused>false</strong></p><p>Canvas保留 <strong data-ar-debug-canvas>true</strong></p><p>MindAR状态 <strong data-ar-debug-mindar>AR_NOT_STARTED</strong></p></aside>`
+  if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel ar-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>panelSurfaceZ <strong data-debug-explode-panel>${config.explodedView.panelSurfaceZ}</strong></p><p>frontDirectionSign <strong data-debug-explode-sign>${config.explodedView.frontDirectionSign}</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><p data-debug-explode-warning>等待图层状态</p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre></aside>`
   if (mode === 'state') return `<aside class="debug-panel state-debug-panel ar-debug-panel"><p>AR状态 <strong data-debug-ar-state>AR_NOT_STARTED</strong></p><p>当前制作状态 <strong data-debug-current-state>LINEART</strong></p><p>上一个状态 <strong data-debug-previous-state>—</strong></p><p>bambooProgress <strong data-debug-state-bamboo>0%</strong></p><p>paperProgress <strong data-debug-state-paper>0%</strong></p><p>paintProgress <strong data-debug-state-paint>0%</strong></p><p>视频状态 <strong data-debug-video>idle</strong></p><p>完成状态 <strong data-debug-completed>false</strong></p></aside>`
   return ''
 }
@@ -54,10 +58,22 @@ export function renderArPage1(root) {
   root.__page1Cleanup?.()
   const config = PAGE1_PREVIEW_CONFIG
   const params = new URLSearchParams(window.location.search)
-  const debugMode = ['hotspot', 'tilt', 'tracking', 'state'].includes(params.get('debug'))
+  const debugMode = ['hotspot', 'tilt', 'panel', 'tracking', 'state', 'hints', 'explode'].includes(params.get('debug'))
     ? params.get('debug')
     : null
   const aspect = config.ar.markerAspectFallback
+  const panelConfig = config.ar.arPanel
+  const panelStartRotation = [
+    panelConfig.startRotation.x * panelConfig.frontDirectionSign,
+    panelConfig.startRotation.y,
+    panelConfig.startRotation.z,
+  ]
+  const panelHingePosition = [panelConfig.hingePosition.x, panelConfig.hingePosition.y, panelConfig.hingePosition.z]
+  const panelContentPosition = [
+    panelConfig.contentPosition.x,
+    panelConfig.contentPosition.y,
+    panelConfig.contentPosition.z + panelConfig.frontDirectionSign * panelConfig.frontOffset,
+  ]
   const abortController = new AbortController()
   const { signal } = abortController
   const arBridge = {}
@@ -94,10 +110,10 @@ export function renderArPage1(root) {
           <a-plane id="marker-hotspot-visual" visible="false"
             material="color: #d7a64a; opacity: 0.82; transparent: true; wireframe: true; side: double"></a-plane>
 
-          <a-entity id="panelHinge" position="0 ${-aspect / 2} 0.008"
-            rotation="${vector(config.ar.tiltGuide.panelStartRotation)}" visible="false">
-            <a-entity id="ar-craft-content" position="0 ${aspect / 2} 0"
-              scale="${config.ar.contentScale} ${config.ar.contentScale} ${config.ar.contentScale}">
+          <a-entity id="panelHinge" position="${vector(panelHingePosition)}"
+            rotation="${vector(panelStartRotation)}" visible="false">
+            <a-entity id="panelContent" position="${vector(panelContentPosition)}"
+              scale="${panelConfig.scale} ${panelConfig.scale} ${panelConfig.scale}">
               <a-plane id="ar-depth-glow" position="0 0 -0.13" width="4.2" height="7.2"
                 material="color: #7c3e12; opacity: 0.16; transparent: true; shader: flat"></a-plane>
               <a-entity id="ar-spatial-particles" aria-hidden="true">
@@ -115,11 +131,11 @@ export function renderArPage1(root) {
                   )
                   .join('')}
               </a-entity>
-              ${imageEntity('craft-panel-asset', config.backgroundBoard, 'id="craft-panel"')}
+              ${imageEntity('craft-panel-asset', config.backgroundBoard, 'id="craft-panel-surface" data-render-order="0"')}
               <a-plane id="craft-plane" position="${vector(config.craftPlane.position)}"
                 rotation="${vector(config.craftPlane.rotation)}" width="${config.craftPlane.size.width}"
                 height="${config.craftPlane.size.height}"
-                material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; shader: flat"
+                material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; depthWrite: false; depthTest: true; side: double; shader: flat"
                 visible="false"></a-plane>
               <a-video id="dragon-video-plane" src="#dragon-video"
                 position="${vector(config.videoPlane.position)}" rotation="${vector(config.videoPlane.rotation)}"
@@ -179,10 +195,11 @@ export function renderArPage1(root) {
         <button type="button" data-ar-action="start">开启AR体验</button>
       </section>
       <p class="ar-scan-status" role="status" hidden>请扫描竹骨燃龙识别卡</p>
-      <section class="ar-tilt-prompt ar-overlay-card" hidden>
-        <img src="${config.assets.phoneTiltGuide}" alt="手机立起示意" draggable="false" />
-        <p>缓慢立起手机，从侧面观察龙首成形。</p>
-        <button type="button" data-ar-action="manual-tilt" hidden>我已立起手机</button>
+      <section class="ar-placement-guide ar-overlay-card" hidden>
+        <img src="${config.assets.phoneTiltGuide}" alt="识别图摆放示意" draggable="false" />
+        <p>建议将识别图缓慢平放于桌面，<br />体验火龙工艺展开效果更佳。</p>
+        <p class="placement-note">识别图保持竖直时也可继续体验。</p>
+        <button type="button" data-ar-action="continue-placement">继续体验</button>
       </section>
       <section class="ar-lost-dialog ar-overlay-card" role="dialog" hidden>
         <h2>识别卡已离开画面</h2>
@@ -202,6 +219,8 @@ export function renderArPage1(root) {
   const scene = root.querySelector('#page1-ar-scene')
   const target = root.querySelector('#page1-target')
   const panelHinge = root.querySelector('#panelHinge')
+  const panelContent = root.querySelector('#panelContent')
+  const craftPanel = root.querySelector('#craft-panel-surface')
   const craftPlane = root.querySelector('#craft-plane')
   const markerPlane = root.querySelector('#marker-touch-plane')
   const hotspotVisual = root.querySelector('#marker-hotspot-visual')
@@ -212,15 +231,31 @@ export function renderArPage1(root) {
   let craftStarted = false
   let controllersReady = false
   let hotspot = null
-  let tilt = null
+  let panelController = null
   let lifecycle = null
   let markerAspect = aspect
   let bambooActivated = false
   let storedCraftState = 'LINEART'
+  let panelReady = false
+  let placementTimer = null
+  let placementFadeTimer = null
+  let panelDebugState = {
+    progress: 0,
+    rotation: panelStartRotation,
+    targetRotation: [
+      panelConfig.endRotation.x * panelConfig.frontDirectionSign,
+      panelConfig.endRotation.y,
+      panelConfig.endRotation.z,
+    ],
+  }
 
   try {
     bambooActivated = localStorage.getItem(config.bambooActivatedStorageKey) === 'true'
     storedCraftState = localStorage.getItem(config.lastStateStorageKey) || 'LINEART'
+    if (storedCraftState === AR_PAGE1_STATES.WAIT_TILT) {
+      storedCraftState = 'LINEART'
+      bambooActivated = true
+    }
   } catch {
     bambooActivated = false
   }
@@ -230,6 +265,57 @@ export function renderArPage1(root) {
     root.querySelector('[data-debug-ar-state]')?.replaceChildren(nextState)
     const mindarState = root.querySelector('[data-ar-debug-mindar]')
     if (mindarState) mindarState.textContent = nextState
+    arBridge.refreshHints?.()
+    updateHintDebug()
+  }
+
+  const isCraftCanvasVisible = () =>
+    Boolean(craftPlane?.object3D?.visible && craftPlane.getAttribute('visible') !== false)
+
+  const canShowBambooHint = ({ state, bounds, center }) => {
+    if (!['LINEART', 'BAMBOO_BUILD'].includes(state)) return { allowed: false, reason: '当前制作状态禁止显示扎骨提示' }
+    if (!(lifecycle?.isTracked() ?? false)) return { allowed: false, reason: 'targetTracked=false' }
+    if (!panelReady) return { allowed: false, reason: 'panelRising动画尚未完成' }
+    if (!isCraftCanvasVisible()) return { allowed: false, reason: 'craftCanvas平面当前不可见' }
+    if (!bounds || !Number.isFinite(bounds.width) || !Number.isFinite(bounds.height) || bounds.width <= 0 || bounds.height <= 0) {
+      return { allowed: false, reason: 'craftCanvas屏幕投影尺寸无效' }
+    }
+    if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.y)) {
+      return { allowed: false, reason: '龙头热点位置不是有限数字' }
+    }
+    return { allowed: true, reason: '' }
+  }
+
+  const updateHintDebug = (snapshot = arBridge.getHintSnapshot?.() ?? {}) => {
+    if (debugMode !== 'hints') return
+    const rect = snapshot.canvasScreenRect
+    root.querySelector('[data-hint-debug-state]').textContent = arState
+    root.querySelector('[data-hint-debug-tracked]').textContent = String(lifecycle?.isTracked() ?? false)
+    root.querySelector('[data-hint-debug-visible]').textContent = String(isCraftCanvasVisible())
+    root.querySelector('[data-hint-debug-ready]').textContent = String(panelReady)
+    root.querySelector('[data-hint-debug-rect]').textContent = rect
+      ? `${rect.left.toFixed(1)}, ${rect.top.toFixed(1)}, ${rect.width.toFixed(1)} × ${rect.height.toFixed(1)}`
+      : '—'
+    root.querySelector('[data-hint-debug-hint]').textContent = String(snapshot.hintVisible ?? false)
+    root.querySelector('[data-hint-debug-x]').textContent = Number.isFinite(snapshot.hintScreenX) ? snapshot.hintScreenX.toFixed(1) : '—'
+    root.querySelector('[data-hint-debug-y]').textContent = Number.isFinite(snapshot.hintScreenY) ? snapshot.hintScreenY.toFixed(1) : '—'
+    root.querySelector('[data-hint-debug-reason]').textContent = snapshot.hiddenReason || '—'
+  }
+
+  const updatePanelDebug = () => {
+    if (!['tilt', 'panel'].includes(debugMode)) return
+    const THREE = window.AFRAME.THREE
+    const hingeWorld = new THREE.Vector3()
+    const contentWorld = new THREE.Vector3()
+    panelHinge.object3D.getWorldPosition(hingeWorld)
+    panelContent.object3D.getWorldPosition(contentWorld)
+    const format = (value) => `${value.x.toFixed(3)}, ${value.y.toFixed(3)}, ${value.z.toFixed(3)}`
+    root.querySelector('[data-panel-debug-hinge]').textContent = format(hingeWorld)
+    root.querySelector('[data-panel-debug-content]').textContent = format(contentWorld)
+    root.querySelector('[data-panel-debug-rotation]').textContent = panelDebugState.rotation.map((value) => value.toFixed(1)).join(', ')
+    root.querySelector('[data-panel-debug-target]').textContent = panelDebugState.targetRotation.map((value) => value.toFixed(1)).join(', ')
+    root.querySelector('[data-panel-debug-front]').textContent = `0, 0, ${panelConfig.frontDirectionSign}`
+    root.querySelector('[data-panel-debug-progress]').textContent = `${Math.round(panelDebugState.progress * 100)}%`
   }
 
   const updateTrackingDebug = (data = {}) => {
@@ -252,7 +338,7 @@ export function renderArPage1(root) {
   const actions = {
     start: () => startAr(),
     'restart-camera': () => startAr(true),
-    'manual-tilt': () => tilt?.completeManually(),
+    'continue-placement': () => finishPlacementGuide(true),
     'continue-current': () => {
       ui.hideLost()
       ui.showScanning('请重新对准竹骨燃龙识别卡')
@@ -276,32 +362,83 @@ export function renderArPage1(root) {
     root,
     config,
     debugLayers: false,
-    debugMode: debugMode === 'state' ? 'state' : null,
+    debugMode: ['state', 'explode'].includes(debugMode) ? debugMode : null,
     shouldReset: params.get('reset') === '1',
     arBridge,
     startPaused: true,
+    canShowBambooHint,
+    onHintVisibilityChange: updateHintDebug,
+    onStateChange(nextState) {
+      if (!craftStarted || !panelReady || !(lifecycle?.isTracked() ?? false)) return
+      arState = nextState
+      updateHintDebug()
+    },
   })
 
   const applyMarkerAspect = (value) => {
     markerAspect = value || config.ar.markerAspectFallback
     hotspot?.updateAspect(markerAspect)
-    panelHinge.object3D.position.y = -markerAspect / 2
-    const content = root.querySelector('#ar-craft-content')
-    content.object3D.position.y = markerAspect / 2
+    panelHinge.object3D.position.set(
+      panelConfig.hingePosition.x,
+      panelConfig.hingePosition.y * (markerAspect / config.ar.markerAspectFallback),
+      panelConfig.hingePosition.z,
+    )
+    panelContent.object3D.position.set(
+      panelConfig.contentPosition.x,
+      panelConfig.contentPosition.y,
+      panelConfig.contentPosition.z + panelConfig.frontDirectionSign * panelConfig.frontOffset,
+    )
     root.querySelector('[data-ar-debug-aspect]')?.replaceChildren(markerAspect.toFixed(4))
   }
 
-  const showTiltFlow = () => {
-    if (craftStarted || arState === AR_PAGE1_STATES.WAIT_TILT || arState === AR_PAGE1_STATES.PANEL_RISING) return
+  const clearPlacementTimers = () => {
+    if (placementTimer !== null) clearTimeout(placementTimer)
+    if (placementFadeTimer !== null) clearTimeout(placementFadeTimer)
+    placementTimer = null
+    placementFadeTimer = null
+  }
+
+  const beginPanelRise = () => {
+    if (craftStarted || !(lifecycle?.isTracked() ?? false)) return
+    clearPlacementTimers()
+    ui.hidePlacementGuide()
     hotspot.setEnabled(false)
     ui.hideHotspot()
     panelHinge.object3D.visible = true
     panelHinge.setAttribute('visible', true)
     craftPlane.object3D.visible = false
     craftPlane.setAttribute('visible', false)
-    setArState(AR_PAGE1_STATES.WAIT_TILT)
-    ui.showTilt()
-    tilt.start()
+    panelReady = false
+    setArState(AR_PAGE1_STATES.PANEL_RISING)
+    ui.showPanelRising()
+    panelController.startRise()
+  }
+
+  const finishPlacementGuide = (immediate = false) => {
+    if (arState !== AR_PAGE1_STATES.SHOW_PLACEMENT_GUIDE) return
+    clearPlacementTimers()
+    if (immediate) {
+      ui.hidePlacementGuide()
+      beginPanelRise()
+      return
+    }
+    ui.fadePlacementGuide()
+    placementFadeTimer = window.setTimeout(beginPanelRise, config.ar.placementGuide.fadeDurationMs)
+  }
+
+  const showPlacementFlow = () => {
+    if (craftStarted || arState === AR_PAGE1_STATES.SHOW_PLACEMENT_GUIDE || arState === AR_PAGE1_STATES.PANEL_RISING) return
+    clearPlacementTimers()
+    hotspot.setEnabled(false)
+    ui.hideHotspot()
+    panelHinge.object3D.visible = false
+    panelHinge.setAttribute('visible', false)
+    craftPlane.object3D.visible = false
+    craftPlane.setAttribute('visible', false)
+    panelReady = false
+    setArState(AR_PAGE1_STATES.SHOW_PLACEMENT_GUIDE)
+    ui.showPlacementGuide()
+    placementTimer = window.setTimeout(() => finishPlacementGuide(false), config.ar.placementGuide.durationMs)
   }
 
   const resumeTrackedExperience = () => {
@@ -331,7 +468,7 @@ export function renderArPage1(root) {
         } catch {
           // 存储失败不阻塞当前体验。
         }
-        showTiltFlow()
+        showPlacementFlow()
       },
       onDebug(data) {
         if (debugMode !== 'hotspot') return
@@ -342,35 +479,30 @@ export function renderArPage1(root) {
       },
     })
 
-    tilt = createTiltController({
-      scene,
-      target,
+    panelController = createPanelRiseController({
       panelHinge,
-      config: config.ar.tiltGuide,
-      signal,
-      isTracked: () => lifecycle?.isTracked() ?? false,
+      config: panelConfig,
       onUpdate(data) {
-        if (debugMode !== 'tilt') return
-        root.querySelector('[data-ar-debug-tracked]').textContent = String(lifecycle?.isTracked() ?? false)
-        root.querySelector('[data-ar-debug-initial]').textContent = data.initialAngle == null ? '—' : `${data.initialAngle.toFixed(1)}°`
-        root.querySelector('[data-ar-debug-angle]').textContent = data.currentAngle == null ? '—' : `${data.currentAngle.toFixed(1)}°`
-        root.querySelector('[data-ar-debug-delta]').textContent = data.deltaAngle == null ? '—' : `${data.deltaAngle.toFixed(1)}°`
-        root.querySelector('[data-ar-debug-stable]').textContent = `${Math.round(data.stableMs)} ms`
-        root.querySelector('[data-ar-debug-rotation]').textContent = data.rotation.map((value) => value.toFixed(1)).join(', ')
-        root.querySelector('[data-ar-debug-satisfied]').textContent = String(data.satisfied)
+        panelDebugState = {
+          progress: data.progress,
+          rotation: [data.rotation.x, data.rotation.y, data.rotation.z],
+          targetRotation: [data.targetRotation.x, data.targetRotation.y, data.targetRotation.z],
+        }
+        updatePanelDebug()
       },
-      onTimeout: () => ui.showManualTilt(),
       onRiseStart() {
         setArState(AR_PAGE1_STATES.PANEL_RISING)
         ui.showPanelRising()
       },
       onComplete() {
+        panelReady = true
         craftStarted = true
         craftPlane.object3D.visible = true
         craftPlane.setAttribute('visible', true)
         arBridge.startCraft?.(storedCraftState)
         ui.showCraft()
-        setArState('LINEART')
+        setArState(arBridge.getSnapshot?.().currentState ?? 'LINEART')
+        arBridge.refreshHints?.()
       },
     })
 
@@ -380,18 +512,19 @@ export function renderArPage1(root) {
       signal,
       onFound() {
         hotspot.setTracked(true)
-        tilt.resume()
+        panelController.resume()
         ui.hideLost()
         setArState(AR_PAGE1_STATES.TARGET_FOUND)
         if (craftStarted) resumeTrackedExperience()
         else if (resumeArState === AR_PAGE1_STATES.PANEL_RISING) {
           setArState(AR_PAGE1_STATES.PANEL_RISING)
-          ui.showTilt()
           ui.showPanelRising()
-        } else if (resumeArState === AR_PAGE1_STATES.WAIT_TILT) {
-          setArState(AR_PAGE1_STATES.WAIT_TILT)
-          ui.showTilt()
-        } else if (bambooActivated) showTiltFlow()
+          panelHinge.object3D.visible = true
+          panelHinge.setAttribute('visible', true)
+          panelController.resume()
+        } else if ([AR_PAGE1_STATES.SHOW_PLACEMENT_GUIDE, AR_PAGE1_STATES.WAIT_TILT].includes(resumeArState)) {
+          showPlacementFlow()
+        } else if (bambooActivated) showPlacementFlow()
         else {
           setArState(AR_PAGE1_STATES.WAIT_BAMBOO)
           hotspot.setEnabled(true)
@@ -400,10 +533,13 @@ export function renderArPage1(root) {
       },
       onLost() {
         resumeArState = arState
+        clearPlacementTimers()
+        ui.hidePlacementGuide()
         hotspot.setTracked(false)
-        tilt.pause()
+        panelController.pause()
         if (craftStarted) arBridge.pauseTracking?.()
         setArState(AR_PAGE1_STATES.TRACKING_PAUSED)
+        arBridge.hideHints?.('targetLost或追踪暂停')
         updateTrackingDebug()
       },
       onLostConfirmed(data) {
@@ -413,6 +549,7 @@ export function renderArPage1(root) {
       onDebug: updateTrackingDebug,
     })
     applyMarkerAspect(markerAspect)
+    updatePanelDebug()
   }
 
   const startAr = async (restart = false) => {
@@ -465,9 +602,10 @@ export function renderArPage1(root) {
   else scene.addEventListener('loaded', setupArControllers, { once: true, signal })
 
   root.__page1Cleanup = () => {
+    clearPlacementTimers()
     abortController.abort()
     hotspot?.destroy()
-    tilt?.destroy()
+    panelController?.destroy()
     lifecycle?.destroy()
     pageCleanup()
     scene.systems['mindar-image-system']?.stop?.()

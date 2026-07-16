@@ -244,10 +244,11 @@ export function createCraftInteraction({
       .applyMatrix4(mesh.matrixWorld)
       .project(scene.camera)
     const bounds = scene.canvas.getBoundingClientRect()
-    return {
+    const point = {
       x: bounds.left + ((local.x + 1) / 2) * bounds.width,
       y: bounds.top + ((1 - local.y) / 2) * bounds.height,
     }
+    return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : null
   }
 
   return {
@@ -271,12 +272,16 @@ export function createCraftInteraction({
       const bottomLeft = projectUv({ x: 0, y: 0 })
       const topRight = projectUv({ x: 1, y: 1 })
       if (!bottomLeft || !topRight) return null
-      return {
+      const projected = {
         left: bottomLeft.x,
         top: topRight.y,
         width: topRight.x - bottomLeft.x,
         height: bottomLeft.y - topRight.y,
       }
+      return [projected.left, projected.top, projected.width, projected.height].every(Number.isFinite) &&
+        projected.width > 0 && projected.height > 0
+        ? projected
+        : null
     },
   }
 }

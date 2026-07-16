@@ -1,4 +1,4 @@
-export function createInteractionHints({ root, config }) {
+export function createInteractionHints({ root, config, canShowBambooHint, onHintVisibilityChange }) {
   const hints = config.interactionHints
   const holdHint = root.querySelector('.hold-interaction-hint')
   const paperHint = root.querySelector('.paper-slider-hint')
@@ -9,25 +9,74 @@ export function createInteractionHints({ root, config }) {
   let bounds = null
   let projectUv = null
   let particleTimer = null
+  let requestedState = null
+  let requestedStates = null
+  let showAllForDebug = false
+  let holdCenter = null
+  let hiddenReason = '尚未进入扎骨步骤'
+  let bambooSuppressed = false
 
   root.style.setProperty('--hint-gold', hints.color)
   root.style.setProperty('--hint-gold-bright', hints.brightColor)
   root.style.setProperty('--hint-dim-opacity', hints.dimOpacity)
 
+  const isFinitePoint = (point) =>
+    point && Number.isFinite(point.x) && Number.isFinite(point.y)
+
+  const isValidBounds = (value) =>
+    value &&
+    [value.left, value.top, value.width, value.height].every(Number.isFinite) &&
+    value.width > 0 &&
+    value.height > 0
+
   const setCircle = (element, center, radius) => {
-    if (!element || !center) return
+    if (!element || !isFinitePoint(center) || !Number.isFinite(radius) || radius <= 0) return false
     element.style.left = `${center.x - radius}px`
     element.style.top = `${center.y - radius}px`
     element.style.width = `${radius * 2}px`
     element.style.height = `${radius * 2}px`
+    return true
   }
 
+  const notifyHintVisibility = () =>
+    onHintVisibilityChange?.({
+      hintVisible: !holdHint.hidden,
+      hintScreenX: holdCenter?.x ?? null,
+      hintScreenY: holdCenter?.y ?? null,
+      canvasScreenRect: bounds,
+      hiddenReason: holdHint.hidden ? hiddenReason : '',
+    })
+
   const updateGeometry = (nextBounds, projector) => {
+    bounds = null
+    projectUv = null
+    holdCenter = null
+    if (!isValidBounds(nextBounds)) {
+      hiddenReason = nextBounds ? 'craftCanvas屏幕投影尺寸无效' : 'craftCanvas尚未挂载或无法投影'
+      showOnly()
+      notifyHintVisibility()
+      return
+    }
+    if (typeof projector !== 'function') {
+      hiddenReason = '龙头热点投影函数不可用'
+      showOnly()
+      notifyHintVisibility()
+      return
+    }
+
     bounds = nextBounds
     projectUv = projector
-    if (!bounds || !projectUv) return
 
-    const holdCenter = projectUv(hints.bamboo.center)
+    holdCenter = projectUv(hints.bamboo.center)
+    if (!isFinitePoint(holdCenter)) {
+      hiddenReason = '龙头热点位置不是有限数字'
+      bounds = null
+      projectUv = null
+      holdCenter = null
+      showOnly()
+      notifyHintVisibility()
+      return
+    }
     setCircle(holdHint, holdCenter, hints.bamboo.outerRadiusPx)
     holdHint.style.setProperty('--hint-inner-radius', `${hints.bamboo.innerRadiusPx}px`)
     holdHint.style.setProperty('--hint-inner-line', `${hints.bamboo.innerLineWidthPx}px`)
@@ -53,6 +102,7 @@ export function createInteractionHints({ root, config }) {
       eyeHint.style.setProperty('--eye-outer-line', `${hints.eye.outerLineWidthPx}px`)
       eyeHint.style.setProperty('--eye-pulse-duration', `${hints.eye.pulseDurationMs}ms`)
     }
+    syncStateVisibility()
   }
 
   const updatePaperSlider = (ratio) => {
@@ -91,16 +141,63 @@ export function createInteractionHints({ root, config }) {
     if (!elements.includes(paintHint)) paintCursor.hidden = true
   }
 
-  const showForState = (state, states, { showAll = false } = {}) => {
-    if (showAll) {
-      ;[holdHint, paperHint, paintHint, eyeHint].forEach((element) => (element.hidden = false))
+  const syncStateVisibility = () => {
+    const state = requestedState
+    const states = requestedStates
+    if (!state || !states) {
+      hiddenReason = '尚未进入扎骨步骤'
+      showOnly()
+      notifyHintVisibility()
       return
     }
-    if (state === states.LINEART || state === states.BAMBOO_BUILD) showOnly(holdHint)
-    else if (state === states.PAPER_COMPARE || state === states.PAPER_READY) showOnly(paperHint)
-    else if (state === states.COLOR_PAINT) showOnly(paintHint)
-    else if (state === states.EYE_READY) showOnly(eyeHint)
-    else showOnly()
+    if (showAllForDebug) {
+      ;[holdHint, paperHint, paintHint, eyeHint].forEach((element) => (element.hidden = false))
+      hiddenReason = ''
+      notifyHintVisibility()
+      return
+    }
+    if (bambooSuppressed && (state === states.LINEART || state === states.BAMBOO_BUILD)) {
+      showOnly()
+      notifyHintVisibility()
+      return
+    }
+    if (state === states.LINEART || state === states.BAMBOO_BUILD) {
+      if (!isValidBounds(bounds) || !isFinitePoint(holdCenter)) {
+        hiddenReason ||= 'craftCanvas投影尚未就绪'
+        showOnly()
+      } else {
+        const gate = canShowBambooHint?.({ state, bounds, center: holdCenter }) ?? true
+        const allowed = typeof gate === 'object' ? gate.allowed : Boolean(gate)
+        if (allowed) {
+          hiddenReason = ''
+          showOnly(holdHint)
+        } else {
+          hiddenReason = typeof gate === 'object' && gate.reason ? gate.reason : 'AR前置条件尚未满足'
+          showOnly()
+        }
+      }
+    } else if (state === states.PAPER_COMPARE || state === states.PAPER_READY) {
+      hiddenReason = '当前不是扎骨步骤'
+      showOnly(paperHint)
+    } else if (state === states.COLOR_PAINT) {
+      hiddenReason = '当前不是扎骨步骤'
+      showOnly(paintHint)
+    } else if (state === states.EYE_READY) {
+      hiddenReason = '当前不是扎骨步骤'
+      showOnly(eyeHint)
+    } else {
+      hiddenReason = '当前状态禁止显示扎骨提示'
+      showOnly()
+    }
+    notifyHintVisibility()
+  }
+
+  const showForState = (state, states, { showAll = false } = {}) => {
+    bambooSuppressed = false
+    requestedState = state
+    requestedStates = states
+    showAllForDebug = showAll
+    syncStateVisibility()
   }
 
   const setActive = (mode, active) => {
@@ -130,6 +227,24 @@ export function createInteractionHints({ root, config }) {
     updatePaperSlider,
     updatePaintCursor,
     showForState,
+    refresh: syncStateVisibility,
+    hideBamboo(reason = 'AR状态禁止显示扎骨提示') {
+      hiddenReason = reason
+      bambooSuppressed = true
+      holdHint.hidden = true
+      notifyHintVisibility()
+    },
+    resumeBamboo() {
+      bambooSuppressed = false
+      syncStateVisibility()
+    },
+    getDebugSnapshot: () => ({
+      hintVisible: !holdHint.hidden,
+      hintScreenX: holdCenter?.x ?? null,
+      hintScreenY: holdCenter?.y ?? null,
+      canvasScreenRect: bounds,
+      hiddenReason: holdHint.hidden ? hiddenReason : '',
+    }),
     setActive,
     burst,
     hidePaintCursor: () => (paintCursor.hidden = true),
@@ -137,7 +252,16 @@ export function createInteractionHints({ root, config }) {
       if (particleTimer !== null) clearTimeout(particleTimer)
       particleTimer = null
       particles.replaceChildren()
+      requestedState = null
+      requestedStates = null
+      showAllForDebug = false
+      bambooSuppressed = false
+      bounds = null
+      projectUv = null
+      holdCenter = null
+      hiddenReason = '提示已重置'
       showOnly()
+      notifyHintVisibility()
     },
   }
 }

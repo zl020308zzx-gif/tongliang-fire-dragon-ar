@@ -1,151 +1,96 @@
 const easeOutCubic = (value) => 1 - Math.pow(1 - value, 3)
 
-export function createTiltController({
-  scene,
-  target,
-  panelHinge,
-  config,
-  signal,
-  isTracked,
-  onUpdate,
-  onTimeout,
-  onRiseStart,
-  onComplete,
-}) {
+// 文件名为兼容旧工程保留；控制器只负责面板升起动画，不再读取设备方向或进行角度判定。
+export function createPanelRiseController({ panelHinge, config, onUpdate, onRiseStart, onComplete }) {
   const THREE = window.AFRAME.THREE
-  const normal = new THREE.Vector3()
-  const targetPosition = new THREE.Vector3()
-  const cameraPosition = new THREE.Vector3()
-  const direction = new THREE.Vector3()
-  const quaternion = new THREE.Quaternion()
-  let active = false
-  let paused = false
-  let pausedAt = null
-  let initialAngle = null
-  let stableStartedAt = null
-  let startedAt = null
-  let timedOut = false
+  const sign = config.frontDirectionSign === -1 ? -1 : 1
   let rising = false
-  let riseElapsed = 0
+  let paused = false
+  let elapsed = 0
   let previousTime = performance.now()
   let frameId = null
 
+  const orientedRotation = (rotation) => ({
+    x: rotation.x * sign,
+    y: rotation.y,
+    z: rotation.z,
+  })
+
+  const startRotation = orientedRotation(config.startRotation)
+  const endRotation = orientedRotation(config.endRotation)
+
   const setRotation = (rotation) => {
     panelHinge.object3D.rotation.set(
-      THREE.MathUtils.degToRad(rotation[0]),
-      THREE.MathUtils.degToRad(rotation[1]),
-      THREE.MathUtils.degToRad(rotation[2]),
+      THREE.MathUtils.degToRad(rotation.x),
+      THREE.MathUtils.degToRad(rotation.y),
+      THREE.MathUtils.degToRad(rotation.z),
     )
   }
 
-  const getObservationAngle = () => {
-    if (!scene.camera) return null
-    target.object3D.getWorldQuaternion(quaternion)
-    normal.set(0, 0, 1).applyQuaternion(quaternion).normalize()
-    target.object3D.getWorldPosition(targetPosition)
-    scene.camera.getWorldPosition(cameraPosition)
-    direction.copy(cameraPosition).sub(targetPosition).normalize()
-    return THREE.MathUtils.radToDeg(normal.angleTo(direction))
-  }
-
-  const beginRise = () => {
-    if (rising) return
-    active = false
-    rising = true
-    riseElapsed = 0
-    onRiseStart()
-  }
-
-  const pauseController = () => {
-    if (paused) return
-    paused = true
-    pausedAt = performance.now()
-    stableStartedAt = null
-  }
-
-  const resumeController = () => {
-    if (!paused) return
-    const now = performance.now()
-    if (pausedAt !== null && startedAt !== null) startedAt += now - pausedAt
-    pausedAt = null
-    paused = false
-    previousTime = now
-  }
+  const emitUpdate = (progress, rotation) =>
+    onUpdate?.({ progress, rotation, targetRotation: endRotation, frontDirectionSign: sign })
 
   const tick = (time) => {
-    const delta = time - previousTime
+    const delta = Math.max(0, time - previousTime)
     previousTime = time
-    if (!paused && rising) {
-      riseElapsed += delta
-      const linear = Math.min(1, riseElapsed / config.animationDurationMs)
+    if (rising && !paused) {
+      elapsed += delta
+      const linear = Math.min(1, elapsed / config.animationDuration)
       const eased = easeOutCubic(linear)
-      const rotation = config.panelStartRotation.map(
-        (value, index) => value + (config.panelEndRotation[index] - value) * eased,
-      )
+      const rotation = {
+        x: startRotation.x + (endRotation.x - startRotation.x) * eased,
+        y: startRotation.y + (endRotation.y - startRotation.y) * eased,
+        z: startRotation.z + (endRotation.z - startRotation.z) * eased,
+      }
       setRotation(rotation)
-      onUpdate({ initialAngle, currentAngle: null, deltaAngle: null, stableMs: 0, rotation, satisfied: true })
+      emitUpdate(linear, rotation)
       if (linear >= 1) {
         rising = false
-        onComplete()
-      }
-    } else if (!paused && active && isTracked()) {
-      const currentAngle = getObservationAngle()
-      if (currentAngle !== null) {
-        if (initialAngle === null) initialAngle = currentAngle
-        const deltaAngle = Math.abs(currentAngle - initialAngle)
-        const inAbsoluteRange =
-          currentAngle >= config.minAbsoluteAngle && currentAngle <= config.maxAbsoluteAngle
-        const satisfied = inAbsoluteRange && deltaAngle >= config.minDeltaAngle
-        if (satisfied) stableStartedAt ??= time
-        else stableStartedAt = null
-        const stableMs = stableStartedAt === null ? 0 : time - stableStartedAt
-        onUpdate({
-          initialAngle,
-          currentAngle,
-          deltaAngle,
-          stableMs,
-          rotation: config.panelStartRotation,
-          satisfied,
-        })
-        if (stableMs >= config.stableDurationMs) beginRise()
-      }
-      if (!timedOut && startedAt !== null && time - startedAt >= config.timeoutMs) {
-        timedOut = true
-        onTimeout()
+        onComplete?.()
       }
     }
     frameId = requestAnimationFrame(tick)
   }
 
-  setRotation(config.panelStartRotation)
+  setRotation(startRotation)
+  emitUpdate(0, startRotation)
   frameId = requestAnimationFrame(tick)
-  document.addEventListener(
-    'visibilitychange',
-    () => {
-      if (document.hidden) {
-        pauseController()
-      } else if (isTracked()) {
-        resumeController()
-      }
-    },
-    { signal },
-  )
 
   return {
-    start() {
-      active = true
+    startRise() {
+      if (rising) return
+      elapsed = 0
       paused = false
-      initialAngle = null
-      stableStartedAt = null
-      startedAt = performance.now()
-      timedOut = false
-      setRotation(config.panelStartRotation)
+      rising = true
+      previousTime = performance.now()
+      setRotation(startRotation)
+      emitUpdate(0, startRotation)
+      onRiseStart?.()
     },
-    completeManually: beginRise,
-    pause: pauseController,
-    resume: resumeController,
+    pause() {
+      paused = true
+    },
+    resume() {
+      paused = false
+      previousTime = performance.now()
+    },
+    reset() {
+      rising = false
+      paused = false
+      elapsed = 0
+      setRotation(startRotation)
+      emitUpdate(0, startRotation)
+    },
+    getState: () => ({
+      rising,
+      paused,
+      progress: Math.min(1, elapsed / config.animationDuration),
+      targetRotation: endRotation,
+      frontDirectionSign: sign,
+    }),
     destroy() {
       if (frameId !== null) cancelAnimationFrame(frameId)
+      frameId = null
     },
   }
 }

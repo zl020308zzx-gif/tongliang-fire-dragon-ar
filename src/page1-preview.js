@@ -6,7 +6,7 @@ const vector = (values) => values.join(' ')
 const imageEntity = (assetId, config, extra = '') => `
   <a-image src="#${assetId}" position="${vector(config.position)}" rotation="${vector(config.rotation)}"
     width="${config.size.width}" height="${config.size.height}"
-    material="transparent: true; alphaTest: 0.01; shader: flat" ${extra}></a-image>
+    material="transparent: true; alphaTest: 0.01; depthWrite: true; depthTest: true; side: double; shader: flat" ${extra}></a-image>
 `
 
 const explodedGroup = (config) => `
@@ -15,13 +15,13 @@ const explodedGroup = (config) => `
     ${config.layers
       .map(
         (layer) => `
-          <a-image data-explode-layer="${layer.id}" src="#explode-${layer.id}"
+          <a-image data-explode-layer="${layer.id}" data-render-order="${layer.renderOrder}" src="#explode-${layer.id}"
             position="0 0 0" width="${config.planeSize.width}" height="${config.planeSize.height}"
-            material="transparent: true; alphaTest: 0.01; opacity: 1; shader: flat"></a-image>
+            material="transparent: true; alphaTest: 0.01; opacity: 1; depthWrite: false; depthTest: true; side: double; shader: flat"></a-image>
         `,
       )
       .join('')}
-    <a-plane id="explode-focus-outline" position="0 0 -0.01"
+    <a-plane id="explode-focus-outline" position="0 0 0" data-render-order="21"
       width="${config.planeSize.width + 0.05}" height="${config.planeSize.height + 0.05}"
       material="color: #d7a64a; wireframe: true; transparent: true; opacity: 0.78; shader: flat"
       visible="false"></a-plane>
@@ -40,7 +40,7 @@ const debugPanel = (mode, config) => {
   if (mode === 'paint') return `<aside class="debug-panel paint-debug-panel"><p>指针位置 <strong data-debug-brush-position>—</strong></p><p>gestureActive <strong data-debug-paint-active>否</strong></p><p>pointerCaptured <strong data-debug-paint-captured>否</strong></p><p>insideCanvas <strong data-debug-paint-inside>否</strong></p><p>insideColorMask <strong data-debug-paint-mask>否</strong></p><p>suspendedOutsideCanvas <strong data-debug-paint-suspended>否</strong></p><p>lastValidPaintPoint <strong data-debug-paint-last>—</strong></p><p>画笔半径 <strong>${config.paintBrush.radius} px</strong></p><p>核心比例 <strong>${config.paintBrush.coreRatio}</strong></p><p>覆盖率 <strong data-debug-paint-progress>0%</strong></p><div class="paint-debug-canvases"><figure><canvas class="debug-valid-mask" width="${config.paintInteraction.statistics.size}" height="${config.paintInteraction.statistics.size}"></canvas><figcaption>有效区域</figcaption></figure><figure><canvas class="debug-painted-mask" width="${config.paintInteraction.statistics.size}" height="${config.paintInteraction.statistics.size}"></canvas><figcaption>coverageMask</figcaption></figure></div></aside><div class="hit-area-debug" hidden></div>`
   if (mode === 'eye') return `<aside class="debug-panel"><p>当前 UV <strong data-debug-eye-uv>—</strong></p><p>是否命中 <strong data-debug-eye-hit>—</strong></p></aside><div class="eye-hotspot-debug" hidden><i></i></div>`
   if (mode === 'video') return `<aside class="debug-panel"><p>视频状态 <strong data-debug-video-mode>idle</strong></p><p>静态平面 <strong data-debug-video-craft>显示</strong></p><p>视频平面 <strong data-debug-video-plane>隐藏</strong></p></aside>`
-  if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre><p>竹骨标注坐标 <strong>见画面</strong></p></aside>`
+  if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>panelSurfaceZ <strong data-debug-explode-panel>${config.explodedView.panelSurfaceZ}</strong></p><p>frontDirectionSign <strong data-debug-explode-sign>${config.explodedView.frontDirectionSign}</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><p data-debug-explode-warning>等待图层状态</p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre><p>竹骨标注坐标 <strong>见画面</strong></p></aside>`
   if (mode === 'hints') return `<aside class="debug-panel hints-debug-panel"><p>提示配置 <strong>全部显示</strong></p><pre>${JSON.stringify(config.interactionHints, null, 2)}</pre></aside><div class="hit-area-debug" hidden></div>`
   if (mode === 'state') return `<aside class="debug-panel state-debug-panel"><p>当前状态 <strong data-debug-current-state>LINEART</strong></p><p>上一个状态 <strong data-debug-previous-state>—</strong></p><p>bambooProgress <strong data-debug-state-bamboo>0%</strong></p><p>paperProgress <strong data-debug-state-paper>0%</strong></p><p>paintProgress <strong data-debug-state-paint>0%</strong></p><p>视频状态 <strong data-debug-video>idle</strong></p><p>完成状态 <strong data-debug-completed>false</strong></p></aside>`
   return ''
@@ -68,10 +68,10 @@ export function renderPage1Preview(root) {
           <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
         </a-assets>
 
-        ${imageEntity('craft-panel', config.backgroundBoard)}
+        ${imageEntity('craft-panel', config.backgroundBoard, 'id="craft-panel-surface" data-render-order="0"')}
         <a-plane id="craft-plane" position="${vector(config.craftPlane.position)}" rotation="${vector(config.craftPlane.rotation)}"
           width="${config.craftPlane.size.width}" height="${config.craftPlane.size.height}"
-          material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; shader: flat"
+          material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; depthWrite: false; depthTest: true; side: double; shader: flat"
           animation__fade="property: material.opacity; from: 0; to: 1; dur: 600; easing: easeOutQuad"></a-plane>
         <a-video id="dragon-video-plane" src="#dragon-video" position="${vector(config.videoPlane.position)}"
           rotation="${vector(config.videoPlane.rotation)}" width="${config.videoPlane.size.width}"

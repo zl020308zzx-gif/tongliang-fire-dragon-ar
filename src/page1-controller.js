@@ -34,10 +34,15 @@ export function initializePage1Controller({
   shouldReset,
   arBridge = null,
   startPaused = false,
+  canShowBambooHint = null,
+  onHintVisibilityChange = null,
+  onStateChange = null,
 }) {
   const abortController = new AbortController()
   const { signal } = abortController
   const scene = root.querySelector('a-scene')
+  const panelContent = root.querySelector('#panelContent') ?? scene
+  const craftPanel = root.querySelector('#craft-panel-surface')
   const canvas = root.querySelector(`#${config.canvas.id}`)
   const craftPlane = root.querySelector('#craft-plane')
   const video = root.querySelector('#dragon-video')
@@ -49,7 +54,12 @@ export function initializePage1Controller({
   const progress = createProgressManager(config.storageKey)
   const pendingTimeouts = new Set()
   const pendingFrames = new Set()
-  const hints = createInteractionHints({ root, config })
+  const hints = createInteractionHints({
+    root,
+    config,
+    canShowBambooHint,
+    onHintVisibilityChange,
+  })
   let state = PAGE1_STATES.LINEART
   let previousState = null
   let interaction = null
@@ -229,14 +239,22 @@ export function initializePage1Controller({
       root.querySelector('[data-debug-explode-progress]').textContent = `${Math.round(explodeProgress * 100)}%`
       root.querySelector('[data-debug-parallax]').textContent = `${parallaxState.rotation.x.toFixed(2)}, ${parallaxState.rotation.y.toFixed(2)}`
       root.querySelector('[data-debug-parallax-input]').textContent = `${parallaxState.normalized.x.toFixed(2)}, ${parallaxState.normalized.y.toFixed(2)}`
-      root.querySelector('[data-debug-explode-layers]').textContent = exploded
-        .getLayerState()
+      const layerStates = exploded.getLayerState()
+      root.querySelector('[data-debug-explode-panel]').textContent = `${config.explodedView.panelSurfaceZ.toFixed(3)}`
+      root.querySelector('[data-debug-explode-sign]').textContent = String(config.explodedView.frontDirectionSign)
+      root.querySelector('[data-debug-explode-layers]').textContent = layerStates
         .map(
           (layer) =>
-            `${layer.id}: pos(${layer.position.x.toFixed(2)},${layer.position.y.toFixed(2)},${layer.position.z.toFixed(2)}) ` +
-            `rot(${layer.rotation.x.toFixed(2)},${layer.rotation.y.toFixed(2)},${layer.rotation.z.toFixed(2)}) op=${layer.opacity.toFixed(2)}`,
+            `${layer.id}: local(${layer.position.x.toFixed(3)},${layer.position.y.toFixed(3)},${layer.position.z.toFixed(3)})\n` +
+            `  world(${layer.worldPosition.x.toFixed(3)},${layer.worldPosition.y.toFixed(3)},${layer.worldPosition.z.toFixed(3)}) ` +
+            `signed=${layer.localSignedDistance.toFixed(3)} worldSigned=${layer.worldSignedDistance.toFixed(3)} front=${layer.isInFront}\n` +
+            `  order=${layer.renderOrder} depthWrite=${layer.depthWrite} depthTest=${layer.depthTest} alphaTest=${layer.alphaTest}`,
         )
         .join('\n')
+      const behind = layerStates.filter((layer) => !layer.isInFront).map((layer) => layer.id)
+      const warning = root.querySelector('[data-debug-explode-warning]')
+      warning.textContent = behind.length ? `警告：${behind.join(', ')} 位于背景板后方` : '全部图层位于背景板正面'
+      warning.classList.toggle('debug-warning', behind.length > 0)
       root.querySelector('[data-debug-explode-click-bounds]').textContent = config.explodedView.layers
         .map((layer) => {
           const corners = [
@@ -318,6 +336,7 @@ export function initializePage1Controller({
       previousState = state
       state = nextState
     }
+    onStateChange?.(state, previousState)
     ui.setState(state, progress.getAll(), meta(extra))
     if (persistState) {
       try {
@@ -565,6 +584,7 @@ export function initializePage1Controller({
     renderer.renderBamboo(0, 1)
     errorOutput.hidden = true
     transition(PAGE1_STATES.LINEART, { resetStamps: true })
+    hints.hideBamboo('页面已重置，等待重新开始交互')
   }
 
   const setupSceneControllers = () => {
@@ -651,6 +671,8 @@ export function initializePage1Controller({
     exploded = createExplodedViewController({
       scene,
       group: explodedGroup,
+      panelContent,
+      panel: craftPanel,
       craftPlane,
       outline: explodeOutline,
       config: config.explodedView,
@@ -800,6 +822,7 @@ export function initializePage1Controller({
         if (paintStatisticsTimer !== null) clearTimeout(paintStatisticsTimer)
         paintStatisticsTimer = null
         interaction?.stop()
+        hints.hideBamboo('targetLost或追踪暂停')
         audio.stopAll()
         videoController?.pauseForTracking?.()
         updateDebug()
@@ -809,6 +832,7 @@ export function initializePage1Controller({
         if (!trackingPaused) return getSnapshot()
         trackingPaused = false
         resumeScheduledWork()
+        hints.resumeBamboo()
         updateDebug()
         return getSnapshot()
       },
@@ -818,6 +842,16 @@ export function initializePage1Controller({
       stopCurrentGesture() {
         interaction?.stop()
       },
+      refreshHints() {
+        updateProjectedUi()
+        hints.refresh()
+        return hints.getDebugSnapshot()
+      },
+      hideHints(reason) {
+        hints.hideBamboo(reason)
+        return hints.getDebugSnapshot()
+      },
+      getHintSnapshot: () => hints.getDebugSnapshot(),
       getSnapshot,
       resetExperience,
     })

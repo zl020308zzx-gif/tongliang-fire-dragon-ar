@@ -3,8 +3,7 @@ export function createArUiController({ root, signal, actions }) {
   const startScreen = root.querySelector('.ar-start-screen')
   const startButton = root.querySelector('[data-ar-action="start"]')
   const scanStatus = root.querySelector('.ar-scan-status')
-  const tiltPrompt = root.querySelector('.ar-tilt-prompt')
-  const manualTilt = root.querySelector('[data-ar-action="manual-tilt"]')
+  const placementGuide = root.querySelector('.ar-placement-guide')
   const lostDialog = root.querySelector('.ar-lost-dialog')
   const videoResume = root.querySelector('.ar-video-resume')
   const errorPanel = root.querySelector('.ar-error-panel')
@@ -16,7 +15,8 @@ export function createArUiController({ root, signal, actions }) {
 
   const hideTransient = () => {
     scanStatus.hidden = true
-    tiltPrompt.hidden = true
+    placementGuide.hidden = true
+    placementGuide.classList.remove('is-fading')
     lostDialog.hidden = true
     videoResume.hidden = true
     errorPanel.hidden = true
@@ -44,17 +44,22 @@ export function createArUiController({ root, signal, actions }) {
     hideHotspot() {
       hotspotLabel.hidden = true
     },
-    showTilt() {
+    showPlacementGuide() {
       hideTransient()
-      tiltPrompt.hidden = false
-      manualTilt.hidden = true
+      placementGuide.classList.remove('is-fading')
+      placementGuide.hidden = false
     },
-    showManualTilt() {
-      manualTilt.hidden = false
+    fadePlacementGuide() {
+      placementGuide.classList.add('is-fading')
+    },
+    hidePlacementGuide() {
+      placementGuide.hidden = true
+      placementGuide.classList.remove('is-fading')
     },
     showPanelRising() {
-      tiltPrompt.querySelector('p').textContent = '龙首工艺板正在升起…'
-      manualTilt.hidden = true
+      hideTransient()
+      scanStatus.textContent = '龙首工艺板正在展开…'
+      scanStatus.hidden = false
     },
     showCraft() {
       hideTransient()

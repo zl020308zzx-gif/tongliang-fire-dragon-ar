@@ -65,12 +65,29 @@
 .ar-overlay-card button + button { margin-left: 8px; }
 .ar-overlay-card button:disabled { opacity: 0.62; cursor: wait; }
 
+.ar-placement-guide img,
 .ar-tilt-prompt img {
   display: block;
   width: 112px;
   height: auto;
   margin: 0 auto 10px;
   filter: drop-shadow(0 5px 10px rgba(74, 32, 15, 0.25));
+}
+
+.ar-placement-guide {
+  opacity: 1;
+  transition: opacity 240ms ease;
+}
+
+.ar-placement-guide.is-fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ar-placement-guide .placement-note {
+  margin-top: -10px;
+  color: #8d5a2d;
+  font-size: 12px;
 }
 
 .ar-scan-status {
@@ -863,6 +880,8 @@ canvas {
 .explode-debug-panel { width: min(420px, calc(100% - 20px)); }
 .explode-debug-panel pre,
 .hints-debug-panel pre { margin: 8px 0 0; white-space: pre-wrap; font-size: 10px; color: #b9e6cd; }
+
+.debug-warning { color: #ff7a6e; font-weight: 800; }
 
 .route-message {
   display: grid;

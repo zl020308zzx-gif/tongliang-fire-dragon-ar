@@ -1,6 +1,7 @@
 import { assetUrl } from './asset-url.js'
 
 const PAGE1_DIRECTORY = assetUrl('assets/images/page1')
+const FRONT_DIRECTION_SIGN = 1
 
 export const PAGE1_PREVIEW_CONFIG = {
   assets: {
@@ -156,13 +157,16 @@ export const PAGE1_PREVIEW_CONFIG = {
     groupRotation: [0, 0, 0],
     planeSize: { width: 3.15, height: 3.098943 },
     animationDurationMs: 1200,
-    focusDepth: 0.2,
+    panelSurfaceZ: -0.08,
+    frontDirectionSign: FRONT_DIRECTION_SIGN,
+    minimumFrontGap: 0.02,
+    focusDepth: 0.16,
     unfocusedOpacity: 0.42,
     layers: [
-      { id: 'lineart', stage: '01', shortLabel: '起稿', targetPosition: [-0.36, 0, -0.66] },
-      { id: 'bamboo', stage: '02', shortLabel: '竹骨', targetPosition: [-0.12, 0, -0.22] },
-      { id: 'paper', stage: '03', shortLabel: '裱糊', targetPosition: [0.12, 0, 0.22] },
-      { id: 'color', stage: '04', shortLabel: '彩绘', targetPosition: [0.36, 0, 0.66] },
+      { id: 'lineart', stage: '01', shortLabel: '起稿', x: -0.36, y: 0, z: 0.12, renderOrder: 10 },
+      { id: 'bamboo', stage: '02', shortLabel: '竹骨', x: -0.12, y: 0, z: 0.32, renderOrder: 11 },
+      { id: 'paper', stage: '03', shortLabel: '裱糊', x: 0.12, y: 0, z: 0.52, renderOrder: 12 },
+      { id: 'color', stage: '04', shortLabel: '彩绘', x: 0.36, y: 0, z: 0.72, renderOrder: 13 },
     ],
     parallax: {
       maxHorizontalDeg: 8,
@@ -190,7 +194,6 @@ export const PAGE1_PREVIEW_CONFIG = {
     targetIndex: 0,
     markerWidth: 1,
     markerAspectFallback: 1.2496,
-    contentScale: 0.18,
     bambooHotspot: {
       // 坐标原点为识别图左上角。
       xMin: 0.03,
@@ -198,15 +201,21 @@ export const PAGE1_PREVIEW_CONFIG = {
       yMin: 0.6,
       yMax: 0.87,
     },
-    tiltGuide: {
-      minAbsoluteAngle: 30,
-      maxAbsoluteAngle: 65,
-      minDeltaAngle: 20,
-      stableDurationMs: 500,
-      timeoutMs: 4000,
-      panelStartRotation: [0, 0, 0],
-      panelEndRotation: [-72, 0, 0],
-      animationDurationMs: 900,
+    placementGuide: {
+      durationMs: 1800,
+      fadeDurationMs: 240,
+    },
+    arPanel: {
+      // 识别图局部坐标；hingePosition.y 会按识别图实际宽高比同比修正。
+      hingePosition: { x: 0, y: 0.6248, z: 0.008 },
+      // 背景板底边连接铰链，所有工艺内容都由该节点统一承载。
+      contentPosition: { x: 0, y: 0.612, z: 0 },
+      startRotation: { x: 0, y: 0, z: 0 },
+      endRotation: { x: 72, y: 0, z: 0 },
+      animationDuration: 900,
+      frontOffset: 0.02,
+      scale: 0.18,
+      frontDirectionSign: FRONT_DIRECTION_SIGN,
     },
     tracking: {
       lostDelayMs: 800,
