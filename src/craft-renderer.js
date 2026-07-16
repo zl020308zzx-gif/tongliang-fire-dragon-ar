@@ -16,8 +16,13 @@ export function createCraftRenderer({
   colorMaskPath,
   errorOutput,
   paintDebug,
+  canvasHints = false,
+  hintConfig = null,
+  eyeHotspot = null,
 }) {
   const context = canvas.getContext('2d')
+  const baseCanvas = createSizedCanvas(canvas.width, canvas.height)
+  const baseContext = baseCanvas.getContext('2d')
   const compositeCanvas = createSizedCanvas(canvas.width, canvas.height)
   const compositeContext = compositeCanvas.getContext('2d')
   const visualPaintMask = createSizedCanvas(canvas.width, canvas.height)
@@ -33,6 +38,16 @@ export function createCraftRenderer({
   const textureRetryFrames = new Set()
   let validStatisticsPixels = null
   let validPixelCount = 0
+  let overlayState = {
+    state: null,
+    states: null,
+    paperRatio: 0,
+    bambooProgress: 0,
+    paintPoint: null,
+    paintActive: false,
+    paintInsideMask: false,
+    hintAllowed: true,
+  }
 
   const getLayer = (layerId) => layers.find((item) => item.id === layerId)
 
@@ -90,6 +105,85 @@ export function createCraftRenderer({
     textureRetryFrames.add(frameId)
   }
 
+  const drawCanvasHints = () => {
+    if (!canvasHints || !overlayState.states || !hintConfig) return
+    const { state, states } = overlayState
+    context.save()
+    context.lineCap = 'round'
+    context.lineJoin = 'round'
+    context.textAlign = 'center'
+    context.textBaseline = 'middle'
+    context.font = '700 34px system-ui, sans-serif'
+    context.shadowColor = 'rgba(45, 20, 8, 0.75)'
+    context.shadowBlur = 10
+
+    if (overlayState.hintAllowed && [states.LINEART, states.BAMBOO_BUILD].includes(state)) {
+      const x = canvas.width * hintConfig.bamboo.center.x
+      const y = canvas.height * (1 - hintConfig.bamboo.center.y)
+      const radius = hintConfig.canvas.holdRadius
+      context.strokeStyle = 'rgba(255, 224, 138, 0.95)'
+      context.lineWidth = hintConfig.canvas.holdLineWidth
+      context.beginPath()
+      context.arc(x, y, radius, 0, Math.PI * 2)
+      context.stroke()
+      context.strokeStyle = 'rgba(215, 166, 74, 0.55)'
+      context.lineWidth = Math.max(2, hintConfig.canvas.holdLineWidth / 2)
+      context.beginPath()
+      context.arc(x, y, radius + 18, 0, Math.PI * 2)
+      context.stroke()
+      context.fillStyle = '#ffe08a'
+      context.fillText(state === states.BAMBOO_BUILD ? `${Math.round(overlayState.bambooProgress * 100)}%` : '长按', x, y)
+    } else if ([states.PAPER_COMPARE, states.PAPER_READY].includes(state)) {
+      const x = Math.max(0, Math.min(canvas.width, canvas.width * overlayState.paperRatio))
+      const handleY = canvas.height / 2
+      context.strokeStyle = '#ffe08a'
+      context.lineWidth = hintConfig.canvas.paperLineWidth
+      context.beginPath()
+      context.moveTo(x, 0)
+      context.lineTo(x, canvas.height)
+      context.stroke()
+      context.fillStyle = 'rgba(72, 34, 15, 0.92)'
+      context.strokeStyle = '#ffe08a'
+      context.lineWidth = 5
+      context.beginPath()
+      context.arc(x, handleY, hintConfig.canvas.paperHandleRadius, 0, Math.PI * 2)
+      context.fill()
+      context.stroke()
+      context.fillStyle = '#ffe08a'
+      context.font = '800 42px system-ui, sans-serif'
+      context.fillText('↔', x, handleY - 2)
+    } else if (state === states.COLOR_PAINT) {
+      if (overlayState.paintPoint) {
+        const { x, y } = overlayState.paintPoint
+        context.strokeStyle = overlayState.paintInsideMask ? '#ffe08a' : 'rgba(255,255,255,0.48)'
+        context.lineWidth = hintConfig.canvas.paintCursorLineWidth
+        context.setLineDash(overlayState.paintActive ? [] : [12, 9])
+        context.beginPath()
+        context.arc(x, y, hintConfig.paintRadius, 0, Math.PI * 2)
+        context.stroke()
+      } else {
+        context.fillStyle = 'rgba(255, 224, 138, 0.92)'
+        context.fillText('在龙首区域滑动彩绘', canvas.width / 2, canvas.height * 0.86)
+      }
+    } else if (state === states.EYE_READY && eyeHotspot) {
+      const x = canvas.width * eyeHotspot.x
+      const y = canvas.height * (1 - eyeHotspot.y)
+      context.strokeStyle = '#ffe08a'
+      context.lineWidth = hintConfig.canvas.eyeLineWidth
+      context.beginPath()
+      context.arc(x, y, canvas.width * eyeHotspot.radius, 0, Math.PI * 2)
+      context.stroke()
+    }
+    context.restore()
+  }
+
+  const present = () => {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(baseCanvas, 0, 0)
+    drawCanvasHints()
+    requestTextureRefresh()
+  }
+
   const drawFull = (targetContext, image, alpha = 1) => {
     targetContext.save()
     targetContext.globalAlpha = alpha
@@ -103,9 +197,9 @@ export function createCraftRenderer({
     try {
       const image = await loadImage(layer.path)
       clearError()
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      drawFull(context, image)
-      requestTextureRefresh()
+      baseContext.clearRect(0, 0, canvas.width, canvas.height)
+      drawFull(baseContext, image)
+      present()
       return true
     } catch {
       showError('图片', layer.path)
@@ -123,8 +217,8 @@ export function createCraftRenderer({
         loadImage(bamboo.path),
       ])
       clearError()
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      if (lineartOpacity > 0) drawFull(context, lineartImage, lineartOpacity)
+      baseContext.clearRect(0, 0, canvas.width, canvas.height)
+      if (lineartOpacity > 0) drawFull(baseContext, lineartImage, lineartOpacity)
 
       if (normalizedProgress > 0) {
         const radius = bambooMask.maxRadius * normalizedProgress
@@ -147,9 +241,9 @@ export function createCraftRenderer({
         compositeContext.fillStyle = gradient
         compositeContext.fillRect(0, 0, canvas.width, canvas.height)
         compositeContext.globalCompositeOperation = 'source-over'
-        context.drawImage(compositeCanvas, 0, 0)
+        baseContext.drawImage(compositeCanvas, 0, 0)
       }
-      requestTextureRefresh()
+      present()
       return true
     } catch (error) {
       showError('图片', error.message)
@@ -167,8 +261,8 @@ export function createCraftRenderer({
         loadImage(paper.path),
       ])
       clearError()
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      drawFull(context, bambooImage)
+      baseContext.clearRect(0, 0, canvas.width, canvas.height)
+      drawFull(baseContext, bambooImage)
       if (normalizedProgress > 0) {
         const boundary = canvas.width * normalizedProgress
         const halfFeather = paperConfig.featherWidth / 2
@@ -183,9 +277,9 @@ export function createCraftRenderer({
         compositeContext.fillStyle = gradient
         compositeContext.fillRect(0, 0, fadeEnd, canvas.height)
         compositeContext.globalCompositeOperation = 'source-over'
-        context.drawImage(compositeCanvas, 0, 0)
+        baseContext.drawImage(compositeCanvas, 0, 0)
       }
-      requestTextureRefresh()
+      present()
       return true
     } catch (error) {
       showError('图片', error.message)
@@ -271,16 +365,16 @@ export function createCraftRenderer({
         preparePaint(),
       ])
       if (!ready) return false
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      drawFull(context, paperImage)
+      baseContext.clearRect(0, 0, canvas.width, canvas.height)
+      drawFull(baseContext, paperImage)
       compositeContext.clearRect(0, 0, canvas.width, canvas.height)
       drawFull(compositeContext, colorImage)
       compositeContext.globalCompositeOperation = 'destination-in'
       compositeContext.drawImage(visualPaintMask, 0, 0)
       compositeContext.drawImage(validMaskCanvas, 0, 0)
       compositeContext.globalCompositeOperation = 'source-over'
-      context.drawImage(compositeCanvas, 0, 0)
-      requestTextureRefresh()
+      baseContext.drawImage(compositeCanvas, 0, 0)
+      present()
       return true
     } catch (error) {
       showError('图片', error.message)
@@ -333,8 +427,8 @@ export function createCraftRenderer({
     const color = getLayer('color')
     try {
       const colorImage = await loadImage(color.path)
-      drawFull(context, colorImage, Math.min(1, Math.max(0, autoProgress)))
-      requestTextureRefresh()
+      drawFull(baseContext, colorImage, Math.min(1, Math.max(0, autoProgress)))
+      present()
       return true
     } catch {
       showError('图片', color.path)
@@ -366,6 +460,27 @@ export function createCraftRenderer({
     isPointInColorMask,
     renderPaintAuto,
     resetPaint,
+    updateCanvasHints(nextState) {
+      const next = { ...overlayState, ...nextState }
+      const samePoint =
+        next.paintPoint === overlayState.paintPoint ||
+        (next.paintPoint &&
+          overlayState.paintPoint &&
+          next.paintPoint.x === overlayState.paintPoint.x &&
+          next.paintPoint.y === overlayState.paintPoint.y)
+      const changed =
+        next.state !== overlayState.state ||
+        next.states !== overlayState.states ||
+        next.paperRatio !== overlayState.paperRatio ||
+        next.bambooProgress !== overlayState.bambooProgress ||
+        next.paintActive !== overlayState.paintActive ||
+        next.paintInsideMask !== overlayState.paintInsideMask ||
+        next.hintAllowed !== overlayState.hintAllowed ||
+        !samePoint
+      overlayState = next
+      if (!changed) return
+      present()
+    },
     destroy() {
       textureRetryFrames.forEach(cancelAnimationFrame)
       textureRetryFrames.clear()

@@ -41,8 +41,7 @@ export const PAGE1_PREVIEW_CONFIG = {
     stateValue: 'state',
   },
   storageKey: 'page1CraftCompleted',
-  lastStateStorageKey: 'page1LastState',
-  bambooActivatedStorageKey: 'bambooActivated',
+  legacyStorageKeys: ['bambooActivated', 'page1LastState', 'page1DisplayMode'],
   transitions: {
     bambooCompleteHoldMs: 600,
     paperCompleteHoldMs: 600,
@@ -123,6 +122,14 @@ export const PAGE1_PREVIEW_CONFIG = {
       outerLineWidthPx: 2,
       pulseDurationMs: 1800,
     },
+    canvas: {
+      holdRadius: 70,
+      holdLineWidth: 7,
+      paperLineWidth: 5,
+      paperHandleRadius: 38,
+      paintCursorLineWidth: 5,
+      eyeLineWidth: 6,
+    },
   },
   craftStamps: {
     lightDurationMs: 300,
@@ -201,21 +208,37 @@ export const PAGE1_PREVIEW_CONFIG = {
       yMin: 0.6,
       yMax: 0.87,
     },
-    placementGuide: {
-      durationMs: 1800,
-      fadeDurationMs: 240,
+    trackingSmoothing: {
+      positionLerp: 0.12,
+      rotationSlerp: 0.1,
+      positionDeadzone: 0.002,
+      rotationDeadzoneDeg: 0.35,
+      lostHoldDuration: 250,
+      recoverDuration: 300,
     },
     arPanel: {
-      // 识别图局部坐标；hingePosition.y 会按识别图实际宽高比同比修正。
-      hingePosition: { x: 0, y: 0.6248, z: 0.008 },
-      // 背景板底边连接铰链，所有工艺内容都由该节点统一承载。
-      contentPosition: { x: 0, y: 0.612, z: 0 },
-      startRotation: { x: 0, y: 0, z: 0 },
-      endRotation: { x: 72, y: 0, z: 0 },
-      animationDuration: 900,
-      frontOffset: 0.02,
-      scale: 0.18,
       frontDirectionSign: FRONT_DIRECTION_SIGN,
+      baseScale: 0.18,
+      modes: {
+        vertical: {
+          hingePosition: { x: 0, y: 0.6248, z: 0.008 },
+          contentPosition: { x: 0, y: 0.544, z: 0 },
+          startRotation: { x: 0, y: 0, z: 0 },
+          endRotation: { x: 74, y: 0, z: 0 },
+          frontOffset: 0.018,
+          scale: 0.89,
+          animationDuration: 900,
+        },
+        parallel: {
+          position: { x: 0, y: 0, z: 0.006 },
+          contentPosition: { x: 0, y: 0, z: 0 },
+          startRotation: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0 },
+          frontOffset: 0.025,
+          scale: 0.92,
+          animationDuration: 650,
+        },
+      },
     },
     tracking: {
       lostDelayMs: 800,

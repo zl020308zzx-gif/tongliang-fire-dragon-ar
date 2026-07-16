@@ -35,7 +35,7 @@ export function createMarkerHotspot({
     const visible = enabled && tracked
     visual.object3D.visible = visible
     visual.setAttribute('visible', visible)
-    label.hidden = !visible
+    if (label) label.hidden = !visible
   }
 
   const getIntersection = (clientX, clientY) => {
@@ -62,7 +62,7 @@ export function createMarkerHotspot({
   }
 
   const projectLabel = () => {
-    if (!label.hidden && scene.camera && scene.canvas) {
+    if (label && !label.hidden && scene.camera && scene.canvas) {
       const world = new THREE.Vector3()
       visual.object3D.getWorldPosition(world)
       world.project(scene.camera)

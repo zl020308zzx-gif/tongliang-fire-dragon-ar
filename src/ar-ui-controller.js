@@ -3,7 +3,7 @@ export function createArUiController({ root, signal, actions }) {
   const startScreen = root.querySelector('.ar-start-screen')
   const startButton = root.querySelector('[data-ar-action="start"]')
   const scanStatus = root.querySelector('.ar-scan-status')
-  const placementGuide = root.querySelector('.ar-placement-guide')
+  const modeSelect = root.querySelector('.ar-mode-select')
   const lostDialog = root.querySelector('.ar-lost-dialog')
   const videoResume = root.querySelector('.ar-video-resume')
   const errorPanel = root.querySelector('.ar-error-panel')
@@ -15,8 +15,7 @@ export function createArUiController({ root, signal, actions }) {
 
   const hideTransient = () => {
     scanStatus.hidden = true
-    placementGuide.hidden = true
-    placementGuide.classList.remove('is-fading')
+    modeSelect.hidden = true
     lostDialog.hidden = true
     videoResume.hidden = true
     errorPanel.hidden = true
@@ -40,21 +39,19 @@ export function createArUiController({ root, signal, actions }) {
       startScreen.hidden = true
       hideTransient()
       preview.classList.remove('is-craft-active')
+      scanStatus.textContent = '点击识别图左下角竹篾'
+      scanStatus.hidden = false
     },
     hideHotspot() {
-      hotspotLabel.hidden = true
+      if (hotspotLabel) hotspotLabel.hidden = true
+      scanStatus.hidden = true
     },
-    showPlacementGuide() {
+    showModeSelect() {
       hideTransient()
-      placementGuide.classList.remove('is-fading')
-      placementGuide.hidden = false
+      modeSelect.hidden = false
     },
-    fadePlacementGuide() {
-      placementGuide.classList.add('is-fading')
-    },
-    hidePlacementGuide() {
-      placementGuide.hidden = true
-      placementGuide.classList.remove('is-fading')
+    hideModeSelect() {
+      modeSelect.hidden = true
     },
     showPanelRising() {
       hideTransient()

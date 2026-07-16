@@ -54,11 +54,16 @@ export function initializePage1Controller({
   const progress = createProgressManager(config.storageKey)
   const pendingTimeouts = new Set()
   const pendingFrames = new Set()
+  let canvasHintAllowed = !arBridge
   const hints = createInteractionHints({
     root,
     config,
     canShowBambooHint,
-    onHintVisibilityChange,
+    onHintVisibilityChange(snapshot) {
+      canvasHintAllowed = snapshot.hintVisible
+      onHintVisibilityChange?.(snapshot)
+    },
+    renderInCanvas: Boolean(arBridge),
   })
   let state = PAGE1_STATES.LINEART
   let previousState = null
@@ -80,7 +85,6 @@ export function initializePage1Controller({
   let lastPaintStatisticsTime = 0
   let experienceGeneration = 0
   let trackingPaused = startPaused
-  let persistState = !startPaused
 
   if (shouldReset) progress.clearCompletion()
 
@@ -98,6 +102,9 @@ export function initializePage1Controller({
       debugMode === 'paint'
         ? { validCanvas: root.querySelector('.debug-valid-mask'), paintedCanvas: root.querySelector('.debug-painted-mask') }
         : null,
+    canvasHints: Boolean(arBridge),
+    hintConfig: { ...config.interactionHints, paintRadius: config.paintBrush.radius },
+    eyeHotspot: config.eyeHotspot,
   })
   const audio = createAudioController({
     paths: {
@@ -206,6 +213,17 @@ export function initializePage1Controller({
 
   const meta = (extra = {}) => ({ hasSeenFullPaper, selectedLayer, ...extra })
 
+  const syncCanvasHints = (extra = {}) => {
+    renderer.updateCanvasHints({
+      state,
+      states: PAGE1_STATES,
+      paperRatio: progress.get('paper'),
+      bambooProgress: progress.get('bamboo'),
+      hintAllowed: !trackingPaused && canvasHintAllowed,
+      ...extra,
+    })
+  }
+
   const updateDebug = () => {
     const values = progress.getAll()
     if (debugMode === 'bamboo') {
@@ -304,6 +322,7 @@ export function initializePage1Controller({
     const bounds = interaction.getProjectedBounds()
     hints.updateGeometry(bounds, (uv) => interaction.projectUv(uv))
     hints.updatePaperSlider(progress.get('paper'))
+    syncCanvasHints()
     if (['bamboo', 'paper', 'paint', 'hints'].includes(debugMode)) {
       const debugBounds = root.querySelector('.hit-area-debug')
       if (debugBounds && bounds) {
@@ -338,14 +357,8 @@ export function initializePage1Controller({
     }
     onStateChange?.(state, previousState)
     ui.setState(state, progress.getAll(), meta(extra))
-    if (persistState) {
-      try {
-        localStorage.setItem(config.lastStateStorageKey, state)
-      } catch {
-        // 存储不可用时仍保持当前内存状态。
-      }
-    }
     hints.showForState(state, PAGE1_STATES, { showAll: debugMode === 'hints' })
+    syncCanvasHints()
     const inExplode = [
       PAGE1_STATES.EXPLODE_TRANSITION,
       PAGE1_STATES.EXPLODE_VIEW,
@@ -395,6 +408,7 @@ export function initializePage1Controller({
         if (!paperDemoActive) return
         const ratio = config.paperCompare.demonstration.peakProgress * Math.sin(Math.PI * value)
         progress.setExact('paper', ratio)
+        syncCanvasHints()
         renderer.renderPaper(ratio)
         hints.updatePaperSlider(ratio)
         updateDebug()
@@ -403,6 +417,7 @@ export function initializePage1Controller({
         if (!paperDemoActive) return
         paperDemoActive = false
         progress.setExact('paper', 0)
+        syncCanvasHints()
         renderer.renderPaper(0)
         hints.updatePaperSlider(0)
       },
@@ -412,6 +427,7 @@ export function initializePage1Controller({
   const startPaperCompare = ({ demonstrate = true } = {}) => {
     interactionLocked = false
     progress.setExact('paper', 0)
+    syncCanvasHints()
     renderer.renderPaper(0)
     transition(PAGE1_STATES.PAPER_COMPARE)
     if (demonstrate) runPaperDemo()
@@ -448,6 +464,7 @@ export function initializePage1Controller({
       (value) => {
         const next = start + (1 - start) * value
         progress.setExact('paper', next)
+        syncCanvasHints()
         renderer.renderPaper(next)
         hints.updatePaperSlider(next)
         updateDebug()
@@ -583,8 +600,11 @@ export function initializePage1Controller({
     showExplodeUi(false)
     renderer.renderBamboo(0, 1)
     errorOutput.hidden = true
+    arBridge?.restartOpening?.()
+    trackingPaused = Boolean(arBridge)
     transition(PAGE1_STATES.LINEART, { resetStamps: true })
     hints.hideBamboo('页面已重置，等待重新开始交互')
+    syncCanvasHints({ hintAllowed: false })
   }
 
   const setupSceneControllers = () => {
@@ -605,6 +625,7 @@ export function initializePage1Controller({
       },
       onBambooProgress(value) {
         const next = progress.set('bamboo', value)
+        syncCanvasHints()
         renderer.renderBamboo(next, 1)
         ui.updateProgress('bamboo', next)
         updateDebug()
@@ -614,6 +635,7 @@ export function initializePage1Controller({
         if (![PAGE1_STATES.PAPER_COMPARE, PAGE1_STATES.PAPER_READY].includes(state) || interactionLocked) return true
         paperDemoActive = false
         const next = progress.setExact('paper', value)
+        syncCanvasHints()
         renderer.renderPaper(next)
         hints.updatePaperSlider(next)
         if (!hasSeenFullPaper && next >= config.paperCompare.completeThreshold) {
@@ -644,6 +666,11 @@ export function initializePage1Controller({
             active: pointerActivity.isActive && pointerActivity.mode === 'paint',
             insideMask,
           })
+          syncCanvasHints({
+            paintPoint: info.inside ? info.canvasPoint : null,
+            paintActive: pointerActivity.isActive && pointerActivity.mode === 'paint',
+            paintInsideMask: insideMask,
+          })
         }
         if (debugMode === 'eye' && info.eventType === 'down') root.querySelector('[data-debug-eye-uv]').textContent = info.inside ? `${info.uv.x.toFixed(3)}, ${info.uv.y.toFixed(3)}` : '未命中平面'
       },
@@ -652,6 +679,10 @@ export function initializePage1Controller({
         hints.setActive(activity.mode, activity.isActive)
         if (activity.mode === 'paper' && activity.isActive) paperDemoActive = false
         if (!activity.isActive && activity.mode === 'paint') hints.hidePaintCursor()
+        syncCanvasHints({
+          paintActive: activity.isActive && activity.mode === 'paint',
+          ...(activity.isActive ? {} : { paintPoint: null }),
+        })
         updateDebug()
       },
       onEyeClick(info) {
@@ -777,7 +808,6 @@ export function initializePage1Controller({
   if (arBridge) {
     Object.assign(arBridge, {
       startCraft(restoredState = PAGE1_STATES.LINEART) {
-        persistState = true
         trackingPaused = false
         resumeScheduledWork()
         interactionLocked = false
@@ -823,6 +853,7 @@ export function initializePage1Controller({
         paintStatisticsTimer = null
         interaction?.stop()
         hints.hideBamboo('targetLost或追踪暂停')
+        syncCanvasHints({ hintAllowed: false, paintPoint: null, paintActive: false })
         audio.stopAll()
         videoController?.pauseForTracking?.()
         updateDebug()
@@ -833,6 +864,7 @@ export function initializePage1Controller({
         trackingPaused = false
         resumeScheduledWork()
         hints.resumeBamboo()
+        syncCanvasHints()
         updateDebug()
         return getSnapshot()
       },
@@ -847,6 +879,7 @@ export function initializePage1Controller({
         hints.refresh()
         return hints.getDebugSnapshot()
       },
+      refreshProjectedUi: updateProjectedUi,
       hideHints(reason) {
         hints.hideBamboo(reason)
         return hints.getDebugSnapshot()

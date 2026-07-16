@@ -269,14 +269,24 @@ export function createCraftInteraction({
     }),
     projectUv,
     getProjectedBounds() {
-      const bottomLeft = projectUv({ x: 0, y: 0 })
-      const topRight = projectUv({ x: 1, y: 1 })
-      if (!bottomLeft || !topRight) return null
+      const corners = [
+        projectUv({ x: 0, y: 0 }),
+        projectUv({ x: 0, y: 1 }),
+        projectUv({ x: 1, y: 0 }),
+        projectUv({ x: 1, y: 1 }),
+      ]
+      if (corners.some((point) => !point)) return null
+      const xs = corners.map((point) => point.x)
+      const ys = corners.map((point) => point.y)
+      const left = Math.min(...xs)
+      const right = Math.max(...xs)
+      const top = Math.min(...ys)
+      const bottom = Math.max(...ys)
       const projected = {
-        left: bottomLeft.x,
-        top: topRight.y,
-        width: topRight.x - bottomLeft.x,
-        height: bottomLeft.y - topRight.y,
+        left,
+        top,
+        width: right - left,
+        height: bottom - top,
       }
       return [projected.left, projected.top, projected.width, projected.height].every(Number.isFinite) &&
         projected.width > 0 && projected.height > 0

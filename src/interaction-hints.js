@@ -1,4 +1,4 @@
-export function createInteractionHints({ root, config, canShowBambooHint, onHintVisibilityChange }) {
+export function createInteractionHints({ root, config, canShowBambooHint, onHintVisibilityChange, renderInCanvas = false }) {
   const hints = config.interactionHints
   const holdHint = root.querySelector('.hold-interaction-hint')
   const paperHint = root.querySelector('.paper-slider-hint')
@@ -15,6 +15,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
   let holdCenter = null
   let hiddenReason = '尚未进入扎骨步骤'
   let bambooSuppressed = false
+  let canvasHintVisible = false
 
   root.style.setProperty('--hint-gold', hints.color)
   root.style.setProperty('--hint-gold-bright', hints.brightColor)
@@ -40,7 +41,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
 
   const notifyHintVisibility = () =>
     onHintVisibilityChange?.({
-      hintVisible: !holdHint.hidden,
+      hintVisible: renderInCanvas ? canvasHintVisible : !holdHint.hidden,
       hintScreenX: holdCenter?.x ?? null,
       hintScreenY: holdCenter?.y ?? null,
       canvasScreenRect: bounds,
@@ -106,6 +107,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
   }
 
   const updatePaperSlider = (ratio) => {
+    if (renderInCanvas) return
     if (!bounds) return
     const x = bounds.left + bounds.width * ratio
     paperHint.style.left = `${x}px`
@@ -118,6 +120,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
   }
 
   const updatePaintCursor = ({ point, active, insideMask }) => {
+    if (renderInCanvas) return
     if (!point || !bounds) {
       paintCursor.hidden = true
       return
@@ -135,7 +138,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
 
   const showOnly = (...elements) => {
     ;[holdHint, paperHint, paintHint, eyeHint].forEach((element) => {
-      element.hidden = !elements.includes(element)
+      element.hidden = renderInCanvas || !elements.includes(element)
       element.classList.remove('hint-muted')
     })
     if (!elements.includes(paintHint)) paintCursor.hidden = true
@@ -144,6 +147,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
   const syncStateVisibility = () => {
     const state = requestedState
     const states = requestedStates
+    canvasHintVisible = false
     if (!state || !states) {
       hiddenReason = '尚未进入扎骨步骤'
       showOnly()
@@ -151,7 +155,10 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
       return
     }
     if (showAllForDebug) {
-      ;[holdHint, paperHint, paintHint, eyeHint].forEach((element) => (element.hidden = false))
+      if (!renderInCanvas) {
+        ;[holdHint, paperHint, paintHint, eyeHint].forEach((element) => (element.hidden = false))
+      }
+      canvasHintVisible = state === states.LINEART || state === states.BAMBOO_BUILD
       hiddenReason = ''
       notifyHintVisibility()
       return
@@ -170,6 +177,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
         const allowed = typeof gate === 'object' ? gate.allowed : Boolean(gate)
         if (allowed) {
           hiddenReason = ''
+          canvasHintVisible = true
           showOnly(holdHint)
         } else {
           hiddenReason = typeof gate === 'object' && gate.reason ? gate.reason : 'AR前置条件尚未满足'
@@ -231,6 +239,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
     hideBamboo(reason = 'AR状态禁止显示扎骨提示') {
       hiddenReason = reason
       bambooSuppressed = true
+      canvasHintVisible = false
       holdHint.hidden = true
       notifyHintVisibility()
     },
@@ -239,7 +248,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
       syncStateVisibility()
     },
     getDebugSnapshot: () => ({
-      hintVisible: !holdHint.hidden,
+      hintVisible: renderInCanvas ? canvasHintVisible : !holdHint.hidden,
       hintScreenX: holdCenter?.x ?? null,
       hintScreenY: holdCenter?.y ?? null,
       canvasScreenRect: bounds,
@@ -256,6 +265,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
       requestedStates = null
       showAllForDebug = false
       bambooSuppressed = false
+      canvasHintVisible = false
       bounds = null
       projectUv = null
       holdCenter = null

@@ -90,6 +90,42 @@
   font-size: 12px;
 }
 
+.ar-mode-select {
+  width: min(88vw, 420px);
+}
+
+.ar-mode-select .mode-options {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.ar-mode-select .mode-options button {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 15px 18px;
+  text-align: left;
+}
+
+.ar-mode-select .mode-options strong {
+  font-size: 1.05rem;
+}
+
+.ar-mode-select .mode-options small {
+  color: rgba(255, 239, 206, 0.76);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.page1-ar .hold-interaction-hint,
+.page1-ar .paper-slider-hint,
+.page1-ar .paint-entry-hint,
+.page1-ar .paint-brush-cursor,
+.page1-ar .eye-interaction-hint {
+  display: none !important;
+}
+
 .ar-scan-status {
   position: fixed;
   z-index: 35;
