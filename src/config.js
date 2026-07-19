@@ -1,20 +1,20 @@
 import { assetUrl } from './asset-url.js'
 
-const PAGE1_DIRECTORY = assetUrl('assets/images/page1')
+const PAGE1_DIRECTORY = assetUrl('assets/page1/images/page1')
 const FRONT_DIRECTION_SIGN = 1
 
 export const PAGE1_PREVIEW_CONFIG = {
   assets: {
     backgroundBoard: `${PAGE1_DIRECTORY}/craft-panel.png`,
     bambooBundle: `${PAGE1_DIRECTORY}/bamboo-bundle.png`,
-    bambooBuildAudio: assetUrl('assets/audio/bamboo-build.mp3'),
-    paperCoverAudio: assetUrl('assets/audio/paper-cover.mp3'),
-    paintBrushAudio: assetUrl('assets/audio/paint-brush.mp3'),
-    completeAudio: assetUrl('assets/audio/complete.mp3'),
+    bambooBuildAudio: assetUrl('assets/page1/audio/bamboo-build.mp3'),
+    paperCoverAudio: assetUrl('assets/page1/audio/paper-cover.mp3'),
+    paintBrushAudio: assetUrl('assets/page1/audio/paint-brush.mp3'),
+    completeAudio: assetUrl('assets/page1/audio/complete.mp3'),
     colorMask: `${PAGE1_DIRECTORY}/color-mask.png`,
     badge: `${PAGE1_DIRECTORY}/badge-bamboo.png`,
     phoneTiltGuide: `${PAGE1_DIRECTORY}/phone-tilt-guide.png`,
-    awakenVideo: assetUrl('assets/video/dragon-awaken.mp4'),
+    awakenVideo: assetUrl('assets/page1/video/dragon-awaken.mp4'),
     craftLayers: [
       { id: 'lineart', label: '线稿', path: `${PAGE1_DIRECTORY}/01-lineart.png` },
       { id: 'bamboo', label: '竹骨', path: `${PAGE1_DIRECTORY}/02-bamboo-frame.png` },

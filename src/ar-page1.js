@@ -5,6 +5,8 @@ import { createMarkerHotspot } from './marker-hotspot.js'
 import { createTargetLifecycle } from './target-lifecycle.js'
 import { createPanelRiseController } from './tilt-controller.js'
 import { createStableAnchorController } from './stable-anchor-controller.js'
+import { PAGE2_CONFIG } from './page2/page2-config.js'
+import { createPage2Experience, page2AssetsMarkup, page2SceneMarkup, page2UiMarkup } from './page2/page2.js'
 
 export const AR_PAGE1_STATES = Object.freeze({
   AR_NOT_STARTED: 'AR_NOT_STARTED',
@@ -65,6 +67,8 @@ export function renderArPage1(root) {
   const debugMode = ['hotspot', 'tilt', 'panel', 'tracking', 'state', 'hints', 'explode', 'stabilize', 'mode'].includes(params.get('debug'))
     ? params.get('debug')
     : null
+  const page2Debug = params.get('debug') === '1'
+  const page2Entry = params.get('ar') === 'page2'
   const aspect = config.ar.markerAspectFallback
   const panelConfig = config.ar.arPanel
   const initialPanelMode = panelConfig.modes.vertical
@@ -98,6 +102,7 @@ export function renderArPage1(root) {
           ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
           <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="metadata"></video>
           <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
+          ${page2AssetsMarkup(PAGE2_CONFIG)}
         </a-assets>
 
         <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
@@ -145,6 +150,7 @@ export function renderArPage1(root) {
             </a-entity>
           </a-entity>
         </a-entity>
+        ${page2SceneMarkup(PAGE2_CONFIG, page2Debug)}
       </a-scene>
 
       <header class="page-title"><span>01</span><h1>竹骨成龙</h1></header>
@@ -152,6 +158,7 @@ export function renderArPage1(root) {
         ${config.craftStamps.labels.map((label, index) => `<span data-craft-stamp="${index}" class="${index === 0 ? 'is-current' : ''}">${label}</span>`).join('')}
       </div>
       ${arDebugPanel(debugMode, config)}
+      ${page2UiMarkup(PAGE2_CONFIG, page2Debug)}
 
       <div class="hold-interaction-hint" hidden><i></i><b>长按</b></div>
       <div class="paper-slider-hint" hidden><i>↔</i></div>
@@ -187,9 +194,9 @@ export function renderArPage1(root) {
       </section>
 
       <section class="ar-start-screen ar-overlay-card">
-        <span>铜梁火龙 · 第一页</span>
-        <h2>扫描识别卡，唤醒竹骨成龙工艺</h2>
-        <p>需要使用摄像头识别竹骨燃龙卡片。</p>
+        <span>铜梁火龙 · ${page2Entry ? '第二页' : '第一页'}</span>
+        <h2>${page2Entry ? '扫描识别卡，开启龙文化探索' : '扫描识别卡，唤醒竹骨成龙工艺'}</h2>
+        <p>${page2Entry ? '需要使用摄像头识别《龙脉探源》卡片。' : '需要使用摄像头识别竹骨燃龙卡片。'}</p>
         <button type="button" data-ar-action="start">开启AR体验</button>
       </section>
       <p class="ar-scan-status" role="status" hidden>请扫描竹骨燃龙识别卡</p>
@@ -218,6 +225,8 @@ export function renderArPage1(root) {
 
   const scene = root.querySelector('#page1-ar-scene')
   const target = root.querySelector('#page1-target')
+  const page2Target = root.querySelector('#page2-target')
+  const page2Anchor = root.querySelector('#page2-anchor')
   const stableAnchor = root.querySelector('#stableAnchor')
   const panelHinge = root.querySelector('#panelHinge')
   const panelContent = root.querySelector('#panelContent')
@@ -235,6 +244,7 @@ export function renderArPage1(root) {
   let panelController = null
   let stableAnchorController = null
   let lifecycle = null
+  let page2Controller = null
   let markerAspect = aspect
   let bambooClicked = false
   let displayMode = null
@@ -486,7 +496,12 @@ export function renderArPage1(root) {
       ui.hideVideoResume()
     },
   }
-  const ui = createArUiController({ root, signal, actions })
+  const ui = createArUiController({
+    root,
+    signal,
+    actions,
+    scanMessage: page2Entry ? '请扫描《龙脉探源》第二页识别卡' : '请扫描竹骨燃龙识别卡',
+  })
 
   const pageCleanup = initializePage1Controller({
     root,
@@ -667,11 +682,31 @@ export function renderArPage1(root) {
       },
     })
 
+    page2Controller = createPage2Experience({
+      root,
+      scene,
+      target: page2Target,
+      anchor: page2Anchor,
+      config: PAGE2_CONFIG,
+      debug: page2Debug,
+      onActivate() {
+        stableAnchorController?.setTracked(false)
+        setEntityVisible(stableAnchor, false)
+        hotspot?.setTracked(false)
+        panelController?.pause()
+        if (craftStarted) arBridge.pauseTracking?.()
+        ui.hideModeSelect()
+        ui.hideLost()
+        arBridge.hideHints?.('已切换至第二页识别图')
+      },
+    })
+
     lifecycle = createTargetLifecycle({
       target,
       lostDelayMs: config.ar.tracking.lostDelayMs,
       signal,
       onFound() {
+        page2Controller?.suspendForOtherTarget()
         stableAnchorController.setTracked(true)
         hotspot.setTracked(true)
         panelController.resume()
@@ -708,6 +743,7 @@ export function renderArPage1(root) {
         updateTrackingDebug()
       },
       onLostConfirmed(data) {
+        if (root.querySelector('.page1-ar')?.classList.contains('is-page2-active')) return
         ui.showLost()
         updateTrackingDebug(data)
       },
@@ -774,6 +810,7 @@ export function renderArPage1(root) {
     panelController?.destroy()
     stableAnchorController?.destroy()
     lifecycle?.destroy()
+    page2Controller?.destroy()
     pageCleanup()
     scene.systems['mindar-image-system']?.stop?.()
   }

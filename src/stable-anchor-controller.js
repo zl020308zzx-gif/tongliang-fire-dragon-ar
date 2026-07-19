@@ -12,7 +12,14 @@ export function isFiniteScale(scale) {
   )
 }
 
-export function createStableAnchorController({ target, anchor, config, onUpdate, onFirstValidTransform }) {
+export function createStableAnchorController({
+  target,
+  anchor,
+  config,
+  onUpdate,
+  onFirstValidTransform,
+  externalTick = false,
+}) {
   const THREE = window.AFRAME.THREE
   const targetRelativeMatrix = new THREE.Matrix4()
   const parentInverseMatrix = new THREE.Matrix4()
@@ -136,11 +143,11 @@ export function createStableAnchorController({ target, anchor, config, onUpdate,
 
     anchor.object3D.updateMatrixWorld(true)
     onUpdate?.(snapshot(now))
-    frameId = requestAnimationFrame(tick)
+    if (!externalTick) frameId = requestAnimationFrame(tick)
   }
 
   setVisible(false)
-  frameId = requestAnimationFrame(tick)
+  if (!externalTick) frameId = requestAnimationFrame(tick)
 
   return {
     setTracked(tracked) {
@@ -157,6 +164,9 @@ export function createStableAnchorController({ target, anchor, config, onUpdate,
     },
     hasValidFullTransform: () => firstValidFullTransformReceived,
     getState: snapshot,
+    update(now = performance.now()) {
+      if (externalTick) tick(now)
+    },
     reset() {
       targetTracked = false
       initialized = false

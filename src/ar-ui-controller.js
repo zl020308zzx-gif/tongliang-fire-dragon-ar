@@ -1,4 +1,4 @@
-export function createArUiController({ root, signal, actions }) {
+export function createArUiController({ root, signal, actions, scanMessage = '请扫描竹骨燃龙识别卡' }) {
   const preview = root.querySelector('.page1-preview')
   const startScreen = root.querySelector('.ar-start-screen')
   const startButton = root.querySelector('[data-ar-action="start"]')
@@ -29,7 +29,7 @@ export function createArUiController({ root, signal, actions }) {
       scanStatus.textContent = '正在请求摄像头权限…'
       scanStatus.hidden = false
     },
-    showScanning(message = '请扫描竹骨燃龙识别卡') {
+    showScanning(message = scanMessage) {
       startScreen.hidden = true
       hideTransient()
       scanStatus.textContent = message

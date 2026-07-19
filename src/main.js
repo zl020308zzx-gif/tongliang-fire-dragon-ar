@@ -7,7 +7,7 @@ const params = new URLSearchParams(window.location.search)
 const preview = params.get('preview')
 const ar = params.get('ar')
 
-if (ar === 'page1') {
+if (ar === 'page1' || ar === 'page2') {
   renderArPage1(app)
 } else if (!preview || preview === 'page1') {
   renderPage1Preview(app)
