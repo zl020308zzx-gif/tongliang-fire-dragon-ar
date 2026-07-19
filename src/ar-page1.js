@@ -90,6 +90,7 @@ export function renderArPage1(root) {
 
   root.innerHTML = `
     <main class="page1-preview page1-ar" style="--color-mask-url: url('${config.assets.colorMask}')">
+      <div class="page2-preload-assets" hidden>${page2AssetsMarkup(PAGE2_CONFIG)}</div>
       <a-scene id="page1-ar-scene" class="preview-scene ar-scene" embedded
         mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no"
         renderer="antialias: true; colorManagement: true; alpha: true"
@@ -102,10 +103,9 @@ export function renderArPage1(root) {
           ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
           <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="metadata"></video>
           <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
-          ${page2AssetsMarkup(PAGE2_CONFIG)}
         </a-assets>
 
-        <a-camera position="0 0 0" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
+        <a-camera position="0 0 0" camera="near: 0.01; far: 1000" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
         <a-entity id="page1-target" mindar-image-target="targetIndex: ${config.ar.targetIndex}">
           <a-plane id="marker-touch-plane" width="1" height="${aspect}" position="0 0 0.004"
             material="transparent: true; opacity: 0; side: double"></a-plane>

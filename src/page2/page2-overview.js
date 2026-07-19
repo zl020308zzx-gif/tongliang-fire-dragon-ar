@@ -6,13 +6,11 @@ const easeInOutCubic = (value) => {
 }
 const easeOutBack = (value) => {
   const t = clamp01(value)
-  const c1 = 0.55
+  const c1 = 0.48
   const c3 = c1 + 1
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
 }
-
-const interval = (elapsed, start, end, easing = easeOutCubic) =>
-  easing((elapsed - start) / Math.max(1, end - start))
+const interval = (elapsed, start, duration, easing = easeOutCubic) => easing((elapsed - start) / duration)
 
 const forEachMaterial = (entity, callback) => {
   entity?.object3D?.traverse((object) => {
@@ -23,11 +21,14 @@ const forEachMaterial = (entity, callback) => {
 }
 
 const setOpacity = (entity, opacity) => {
+  let materialFound = false
   forEachMaterial(entity, (material) => {
+    materialFound = true
     material.transparent = true
-    material.opacity = opacity
+    material.opacity = clamp01(opacity)
     material.needsUpdate = true
   })
+  if (!materialFound) entity?.setAttribute('material', 'opacity', clamp01(opacity))
 }
 
 const setVisible = (entity, visible) => {
@@ -47,13 +48,18 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     timeline: root.querySelector('#page2-timeline-root'),
   }
   const layers = {
+    title: root.querySelector('[data-page2-layer="title"]'),
     introLine: root.querySelector('[data-page2-layer="intro-line"]'),
     introText: root.querySelector('[data-page2-layer="intro-text"]'),
     mapMain: root.querySelector('[data-page2-layer="map-main"]'),
     mapText: root.querySelector('[data-page2-layer="map-text"]'),
     mapTongliang: root.querySelector('#page2-map-tongliang'),
+    mapPulse: root.querySelector('#page2-map-tongliang-pulse'),
+    base: root.querySelector('[data-page2-layer="main-base"]'),
     ring: root.querySelector('#page2-main-ring'),
+    scene: root.querySelector('[data-page2-layer="main-scene"]'),
     sparks: root.querySelector('[data-page2-layer="main-sparks"]'),
+    performers: root.querySelector('[data-page2-layer="main-performers"]'),
     dancers: root.querySelector('[data-page2-layer="main-dancers"]'),
     dragon: root.querySelector('[data-page2-layer="main-dragon"]'),
     pearl: root.querySelector('#page2-main-pearl'),
@@ -68,20 +74,49 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
   let mode = 'hidden'
   let elapsed = 0
   let continuousElapsed = 0
+  let depthDirection = 1
 
+  const depth = (value) => value * depthDirection
+  const resetGroupTransform = (entity) => {
+    entity.object3D.position.set(0, 0, 0)
+    entity.object3D.scale.setScalar(1)
+  }
+  const setLayerPose = (entity, { x = 0, y = 0, z = entity.object3D.position.z, scale = 1, opacity = 1 }) => {
+    entity.object3D.position.set(x, y, z)
+    entity.object3D.scale.setScalar(scale)
+    setOpacity(entity, opacity)
+  }
   const setGroupPose = (entity, { x = 0, y = 0, z = 0, scale = 1, opacity = 1 }) => {
     entity.object3D.position.set(x, y, z)
     entity.object3D.scale.setScalar(scale)
     setOpacity(entity, opacity)
   }
 
+  const applyDepths = () => {
+    layers.title.object3D.position.z = depth(config.title.depth)
+    layers.introLine.object3D.position.z = depth(config.intro.depthDragonLine)
+    layers.introText.object3D.position.z = depth(config.intro.depthText)
+    layers.mapMain.object3D.position.z = depth(config.map.depthMain)
+    layers.mapText.object3D.position.z = depth(config.map.depthText)
+    layers.mapTongliang.object3D.position.z = depth(config.map.depthTongliang)
+    layers.mapPulse.object3D.position.z = depth(config.map.depthTongliang + 0.001)
+    Object.entries(config.mainVisual.depths).forEach(([key, value]) => {
+      layers[key].object3D.position.z = depth(value)
+    })
+    layers.typesTitle.object3D.position.z = depth(config.types.depthTitle)
+    layers.typesBack.object3D.position.z = depth(config.types.row1.depth)
+    layers.typesMid.object3D.position.z = depth(config.types.row2.depth)
+    layers.typesFront.object3D.position.z = depth(config.types.row3.depth)
+    layers.timelineBase.object3D.position.z = depth(config.timeline.depthBase)
+    layers.timelineNodes.object3D.position.z = depth(config.timeline.depthKeyNodes)
+    layers.timelineTexts.object3D.position.z = depth(config.timeline.depthTexts)
+  }
+
   const setTimelineReveal = (progress) => {
+    const p = Math.max(0.001, clamp01(progress))
     const plane = layers.timelineBase
-    if (!plane?.object3D) return
-    const width = config.background.width
-    const p = Math.max(0.001, progress)
     plane.object3D.scale.x = p
-    plane.object3D.position.x = -width * 0.5 + width * p * 0.5
+    plane.object3D.position.x = -config.background.width * 0.5 + config.background.width * p * 0.5
     const mesh = plane.getObject3D('mesh')
     if (mesh?.material?.map) {
       mesh.material.map.repeat.x = p
@@ -90,69 +125,110 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
   }
 
   const applyFinal = () => {
-    Object.values(groups).forEach((entity) => setGroupPose(entity, { opacity: 1 }))
+    Object.values(groups).forEach(resetGroupTransform)
+    applyDepths()
     Object.values(layers).forEach((entity) => setOpacity(entity, 1))
-    layers.typesBack.object3D.position.z = 0
-    layers.typesBack.object3D.position.y = 0.006
-    layers.typesBack.object3D.scale.setScalar(0.985)
-    layers.typesMid.object3D.position.z = 0.002
-    layers.typesMid.object3D.scale.setScalar(1)
-    layers.typesFront.object3D.position.z = 0.004
-    layers.typesFront.object3D.position.y = -0.004
-    layers.typesFront.object3D.scale.setScalar(1.012)
+    layers.typesBack.object3D.position.y = config.types.row1.offsetY
+    layers.typesBack.object3D.scale.setScalar(config.types.row1.scale)
+    layers.typesMid.object3D.position.y = config.types.row2.offsetY
+    layers.typesMid.object3D.scale.setScalar(config.types.row2.scale)
+    layers.typesFront.object3D.position.y = config.types.row3.offsetY
+    layers.typesFront.object3D.scale.setScalar(config.types.row3.scale)
+    layers.mapTongliang.object3D.scale.setScalar(1)
+    layers.mapPulse.object3D.scale.setScalar(1)
     setTimelineReveal(1)
   }
 
+  const resetEntry = () => {
+    setVisible(overviewRoot, true)
+    Object.values(groups).forEach(resetGroupTransform)
+    applyDepths()
+    Object.values(layers).forEach((entity) => setOpacity(entity, 0))
+    layers.mapPulse.object3D.scale.setScalar(0.7)
+    setTimelineReveal(0.001)
+  }
+
   const applyEntry = () => {
-    const title = interval(elapsed, 800, 1800, easeOutBack)
-    setGroupPose(groups.title, { y: 0.035 * (1 - title), scale: 0.96 + 0.04 * title, opacity: clamp01(title) })
+    const title = interval(elapsed, 0, 700, easeOutBack)
+    setGroupPose(groups.title, { y: 0.028 * (1 - title), scale: 0.95 + title * 0.05, opacity: title })
 
-    const intro = interval(elapsed, 1200, 2350)
-    setGroupPose(groups.intro, { x: -0.06 * (1 - intro), opacity: intro })
-    setOpacity(layers.introLine, intro)
-    setOpacity(layers.introText, interval(elapsed, 1400, 2500))
+    const introLine = interval(elapsed, 180, 750)
+    setLayerPose(layers.introLine, { x: -0.055 * (1 - introLine), z: depth(config.intro.depthDragonLine), opacity: introLine })
+    const introText = interval(elapsed, 300, 700)
+    setLayerPose(layers.introText, { x: -0.042 * (1 - introText), z: depth(config.intro.depthText), opacity: introText })
 
-    const map = interval(elapsed, 1250, 2450)
-    setGroupPose(groups.map, { x: 0.055 * (1 - map), y: 0.025 * (1 - map), opacity: map })
-    setOpacity(layers.mapMain, map)
-    setOpacity(layers.mapText, interval(elapsed, 1500, 2550))
-    setOpacity(layers.mapTongliang, interval(elapsed, 2050, 2750))
+    const mapMain = interval(elapsed, 260, 820)
+    setLayerPose(layers.mapMain, { x: 0.052 * (1 - mapMain), z: depth(config.map.depthMain), opacity: mapMain })
+    const mapText = interval(elapsed, 450, 650)
+    setLayerPose(layers.mapText, { y: -0.022 * (1 - mapText), z: depth(config.map.depthText), opacity: mapText })
+    const tongliang = interval(elapsed, 750, 520)
+    setOpacity(layers.mapTongliang, tongliang)
+    setOpacity(layers.mapPulse, tongliang * 0.7)
 
-    const main = interval(elapsed, 2000, 3700, easeInOutCubic)
-    setGroupPose(groups.main, { y: -0.06 * (1 - main), z: -0.04 * (1 - main), scale: 0.96 + 0.04 * main, opacity: main })
+    const main = interval(elapsed, 550, 1050, easeInOutCubic)
+    setGroupPose(groups.main, {
+      y: -0.055 * (1 - main),
+      z: depth(-0.032 * (1 - main)),
+      scale: 0.94 + 0.06 * main,
+      opacity: main,
+    })
 
-    const types = interval(elapsed, 3000, 4400)
-    setGroupPose(groups.types, { x: -0.045 * (1 - types), y: -0.025 * (1 - types), opacity: types })
-    setOpacity(layers.typesTitle, interval(elapsed, 3000, 3800))
-    setOpacity(layers.typesBack, interval(elapsed, 3200, 3900))
-    const mid = interval(elapsed, 3380, 4150, easeOutBack)
-    setOpacity(layers.typesMid, clamp01(mid))
-    layers.typesMid.object3D.scale.setScalar(0.94 + 0.06 * mid)
-    const front = interval(elapsed, 3600, 4400)
-    setOpacity(layers.typesFront, front)
-    layers.typesFront.object3D.position.y = -0.02 * (1 - front) - 0.004
+    const typesTitle = interval(elapsed, 950, 650)
+    setLayerPose(layers.typesTitle, {
+      x: 0.035 * (1 - typesTitle),
+      y: -0.025 * (1 - typesTitle),
+      z: depth(config.types.depthTitle),
+      opacity: typesTitle,
+    })
+    const back = interval(elapsed, 1050, 700)
+    setLayerPose(layers.typesBack, {
+      y: config.types.row1.offsetY,
+      z: depth(config.types.row1.depth - 0.025 * (1 - back)),
+      scale: config.types.row1.scale * (0.96 + back * 0.04),
+      opacity: back,
+    })
+    const mid = interval(elapsed, 1200, 700, easeOutBack)
+    setLayerPose(layers.typesMid, {
+      y: config.types.row2.offsetY,
+      z: depth(config.types.row2.depth),
+      scale: 0.92 + (config.types.row2.scale - 0.92) * mid,
+      opacity: mid,
+    })
+    const front = interval(elapsed, 1370, 700)
+    setLayerPose(layers.typesFront, {
+      y: config.types.row3.offsetY - 0.025 * (1 - front),
+      z: depth(config.types.row3.depth),
+      scale: 0.95 + (config.types.row3.scale - 0.95) * front,
+      opacity: front,
+    })
 
-    const timeline = interval(elapsed, 3600, 5000)
-    setGroupPose(groups.timeline, { y: -0.02 * (1 - timeline), opacity: timeline })
     setOpacity(layers.timelineBase, 1)
-    setTimelineReveal(interval(elapsed, 3600, 4450, easeInOutCubic))
-    setOpacity(layers.timelineNodes, interval(elapsed, 4100, 4700))
-    setOpacity(layers.timelineTexts, interval(elapsed, 4500, 5000))
+    setTimelineReveal(interval(elapsed, 1450, 800, easeInOutCubic))
+    const nodes = interval(elapsed, 1750, 640, easeOutBack)
+    setLayerPose(layers.timelineNodes, {
+      z: depth(config.timeline.depthKeyNodes),
+      scale: 0.86 + nodes * 0.14,
+      opacity: nodes,
+    })
+    const texts = interval(elapsed, 2050, 600)
+    setLayerPose(layers.timelineTexts, { z: depth(config.timeline.depthTexts), opacity: texts })
   }
 
   const applyContinuous = () => {
     const seconds = continuousElapsed / 1000
     layers.ring.object3D.rotation.z = -(seconds / config.mainVisual.ringRotationSeconds) * Math.PI * 2
-    const mapPulse = (Math.sin((seconds * Math.PI * 2) / (config.mapTongliang.duration / 1000)) + 1) * 0.5
-    layers.mapTongliang.object3D.scale.setScalar(1 + mapPulse * 0.06)
-    setOpacity(layers.mapTongliang, 0.72 + mapPulse * 0.28)
-    layers.dancers.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 5) * config.mainVisual.dancersAmplitude
-    layers.dragon.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 4.4 + 0.8) * config.mainVisual.dragonAmplitude
-    const pearlPulse = (Math.sin((seconds * Math.PI * 2) / 3) + 1) * 0.5
-    layers.pearl.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 3 + 0.4) * config.mainVisual.pearlAmplitude
-    layers.pearl.object3D.scale.setScalar(1 + pearlPulse * 0.05)
-    setOpacity(layers.pearl, 0.82 + pearlPulse * 0.18)
-    setOpacity(layers.sparks, 0.86 + Math.sin(seconds * 1.1) * 0.06)
+    const mapPulse = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
+    layers.mapTongliang.object3D.scale.setScalar(1)
+    setOpacity(layers.mapTongliang, 0.76 + mapPulse * 0.24)
+    layers.mapPulse.object3D.scale.setScalar(1 + mapPulse * (config.map.tongliangPulseScale - 1))
+    setOpacity(layers.mapPulse, (1 - mapPulse) * 0.46)
+    layers.dancers.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 5.2) * config.mainVisual.dancersAmplitude
+    layers.dragon.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 4.7 + 0.82) * config.mainVisual.dragonAmplitude
+    const pearlPulse = (Math.sin((seconds * Math.PI * 2) / 3.1) + 1) * 0.5
+    layers.pearl.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlAmplitude
+    layers.pearl.object3D.scale.setScalar(1 + pearlPulse * 0.045)
+    setOpacity(layers.pearl, 0.84 + pearlPulse * 0.16)
+    setOpacity(layers.sparks, 0.9 + Math.sin(seconds * 1.05) * 0.04)
   }
 
   const applyExit = () => {
@@ -163,11 +239,12 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     setGroupPose(groups.map, { x: 0.07 * t, opacity })
     setGroupPose(groups.types, { x: -0.055 * t, y: -0.04 * t, opacity })
     setGroupPose(groups.timeline, { x: 0.055 * t, y: -0.04 * t, opacity })
-    setGroupPose(groups.main, { y: -0.075 * t, z: -0.05 * t, scale: 1 - t * 0.03, opacity })
+    setGroupPose(groups.main, { y: -0.075 * t, z: depth(-0.05 * t), scale: 1 - t * 0.03, opacity })
   }
 
   const applyRestore = () => {
     const t = easeOutCubic(elapsed / config.overview.restoreDuration)
+    applyFinal()
     Object.values(groups).forEach((entity) => setOpacity(entity, t))
     groups.title.object3D.position.y = 0.025 * (1 - t)
     groups.intro.object3D.position.x = -0.03 * (1 - t)
@@ -175,16 +252,14 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     groups.main.object3D.position.y = -0.035 * (1 - t)
   }
 
-  const resetEntry = () => {
-    setVisible(overviewRoot, true)
-    Object.values(groups).forEach((entity) => setGroupPose(entity, { opacity: 0 }))
-    Object.values(layers).forEach((entity) => setOpacity(entity, 0))
-    setTimelineReveal(0.001)
-  }
-
   setVisible(overviewRoot, false)
 
   return {
+    setDepthDirection(sign) {
+      depthDirection = sign < 0 ? -1 : 1
+      applyDepths()
+    },
+    resetEntry,
     startEntry() {
       elapsed = 0
       continuousElapsed = 0
@@ -209,7 +284,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       elapsed += delta
       if (mode === 'entering') {
         applyEntry()
-        if (elapsed >= config.overview.totalDuration) {
+        if (elapsed >= config.overviewEntranceDuration) {
           mode = 'overview'
           applyFinal()
           onEntryComplete?.()
@@ -232,12 +307,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
           onRestoreComplete?.()
         }
       }
-      if (mode === 'entering' && elapsed > 2000) {
-        continuousElapsed += delta
-        applyContinuous()
-      }
     },
-    pause() {},
     hide() {
       mode = 'hidden'
       setVisible(overviewRoot, false)
@@ -248,6 +318,18 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       applyFinal()
     },
     getMode: () => mode,
+    getProgress: () => mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
+    getDebugState: () => ({
+      mode,
+      progress: mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
+      depthDirection,
+      title: config.title,
+      intro: config.intro,
+      map: config.map,
+      mainVisualDepths: config.mainVisual.depths,
+      types: config.types,
+      timeline: config.timeline,
+    }),
     destroy() {
       mode = 'hidden'
     },

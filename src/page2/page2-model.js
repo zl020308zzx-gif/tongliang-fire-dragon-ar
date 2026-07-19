@@ -11,6 +11,8 @@ const setVisible = (entity, visible) => {
 export function createPage2Model({
   root,
   scene,
+  anchor,
+  backgroundPlane,
   config,
   hotspots,
   debug,
@@ -26,8 +28,10 @@ export function createPage2Model({
   const THREE = window.AFRAME.THREE
   const modelRoot = root.querySelector('#page2-model-root')
   const transform = root.querySelector('#page2-model-transform')
+  const content = root.querySelector('#page2-model-content')
   const modelEntity = root.querySelector('#page2-fire-dragon-model')
   const hotspotRoot = root.querySelector('#page2-hotspot-root')
+  const particleRoot = root.querySelector('#page2-particle-root')
   const hotspotEntities = new Map(
     hotspots.map((hotspot) => [hotspot.id, root.querySelector(`[data-page2-hotspot="${hotspot.id}"]`)]),
   )
@@ -35,15 +39,27 @@ export function createPage2Model({
   const pointerNdc = new THREE.Vector2()
   const activePointers = new Map()
   const originalMaterials = new Map()
-  const axes = new THREE.AxesHelper(0.24)
+  const modelLocalBounds = new THREE.Box3()
+  const modelLocalCenter = new THREE.Vector3()
+  const modelLocalSize = new THREE.Vector3()
+  const finalPosition = new THREE.Vector3()
+  const entrancePosition = new THREE.Vector3()
+  const worldBounds = new THREE.Box3()
+  const debugBounds = new THREE.Box3()
+  const debugBoxHelper = new THREE.Box3Helper(debugBounds, 0xffb33c)
+  debugBoxHelper.visible = false
+  scene.object3D.add(debugBoxHelper)
+  const axes = new THREE.AxesHelper(0.25)
   axes.visible = debug
-  transform.object3D.add(axes)
+  modelRoot.object3D.add(axes)
   let loaded = false
   let loading = false
+  let layoutReady = false
   let entranceRequested = false
   let entranceActive = false
   let entranceElapsed = 0
   let modelObject = null
+  let baseScale = 1
   let userScale = 1
   let yaw = 0
   let pitch = 0
@@ -53,6 +69,10 @@ export function createPage2Model({
   let celebrationElapsed = -1
   let selectedScreenPoint = null
   let hotspotPulseElapsed = 0
+  let depthDirection = 1
+  let cardDistance = 0
+  let backgroundDistance = Infinity
+  let backgroundPlanePosition = null
 
   const setModelOpacity = (opacity) => {
     if (!modelObject) return
@@ -68,24 +88,115 @@ export function createPage2Model({
     })
   }
 
+  const computeBoundsInModelSpace = () => {
+    modelLocalBounds.makeEmpty()
+    modelEntity.object3D.updateWorldMatrix(true, true)
+    const inverseModelMatrix = new THREE.Matrix4().copy(modelEntity.object3D.matrixWorld).invert()
+    const point = new THREE.Vector3()
+    modelObject.traverse((object) => {
+      if (!object.isMesh || !object.geometry) return
+      object.geometry.computeBoundingBox()
+      const box = object.geometry.boundingBox
+      for (const x of [box.min.x, box.max.x]) {
+        for (const y of [box.min.y, box.max.y]) {
+          for (const z of [box.min.z, box.max.z]) {
+            point.set(x, y, z).applyMatrix4(object.matrixWorld).applyMatrix4(inverseModelMatrix)
+            modelLocalBounds.expandByPoint(point)
+          }
+        }
+      }
+    })
+    modelLocalBounds.getCenter(modelLocalCenter)
+    modelLocalBounds.getSize(modelLocalSize)
+  }
+
+  const updateLayoutPositions = () => {
+    if (!layoutReady) return
+    const halfDepth = modelLocalSize.z * baseScale * 0.5
+    const minimumCenterHeight = config.model.cardClearance + halfDepth
+    const configuredHeight = Math.abs(config.model.finalPosition.z)
+    finalPosition.set(
+      0,
+      config.model.finalPosition.y,
+      depthDirection * Math.max(minimumCenterHeight, configuredHeight),
+    )
+    entrancePosition.set(
+      finalPosition.x + config.model.entranceOffset.x,
+      finalPosition.y + config.model.entranceOffset.y,
+      finalPosition.z + config.model.entranceOffset.z * depthDirection,
+    )
+    cardDistance = Math.max(0, Math.abs(finalPosition.z) - halfDepth)
+    particleRoot.object3D.position.copy(finalPosition)
+  }
+
   const applyTransform = (progress = 1) => {
-    const from = config.model.entrancePosition
-    const to = config.model.position
+    if (!layoutReady) return
     const fromRotation = config.model.entranceRotation
-    const toRotation = config.model.rotation
-    const baseScale = config.model.scale * userScale
-    const entranceScale = lerp(config.model.entranceScale, 1, progress)
+    const toRotation = config.model.defaultRotation
+    const scaled = baseScale * userScale * lerp(config.model.entranceScale, 1, progress)
     transform.object3D.position.set(
-      lerp(from.x, to.x, progress),
-      lerp(from.y, to.y, progress),
-      lerp(from.z, to.z, progress),
+      lerp(entrancePosition.x, finalPosition.x, progress),
+      lerp(entrancePosition.y, finalPosition.y, progress),
+      lerp(entrancePosition.z, finalPosition.z, progress),
     )
     transform.object3D.rotation.set(
       THREE.MathUtils.degToRad(lerp(fromRotation.x, toRotation.x + pitch, progress)),
       THREE.MathUtils.degToRad(lerp(fromRotation.y, toRotation.y + yaw, progress)),
       THREE.MathUtils.degToRad(lerp(fromRotation.z, toRotation.z, progress)),
     )
-    transform.object3D.scale.setScalar(baseScale * entranceScale)
+    transform.object3D.scale.setScalar(scaled)
+  }
+
+  const boxCorners = (box) => {
+    const points = []
+    for (const x of [box.min.x, box.max.x]) {
+      for (const y of [box.min.y, box.max.y]) {
+        for (const z of [box.min.z, box.max.z]) points.push(new THREE.Vector3(x, y, z))
+      }
+    }
+    return points
+  }
+
+  const measureBackgroundClearance = () => {
+    if (!modelObject || !backgroundPlane || !scene.camera) return Infinity
+    anchor.object3D.updateWorldMatrix(true, true)
+    backgroundPlane.object3D.updateWorldMatrix(true, false)
+    transform.object3D.updateWorldMatrix(true, true)
+    worldBounds.setFromObject(modelObject)
+    const planePoint = new THREE.Vector3()
+    const planeQuaternion = new THREE.Quaternion()
+    const planeNormal = new THREE.Vector3(0, 0, 1)
+    backgroundPlane.object3D.getWorldPosition(planePoint)
+    backgroundPlane.object3D.getWorldQuaternion(planeQuaternion)
+    planeNormal.applyQuaternion(planeQuaternion).normalize()
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, planePoint)
+    const cameraWorld = new THREE.Vector3()
+    scene.camera.getWorldPosition(cameraWorld)
+    const cameraSide = Math.sign(plane.distanceToPoint(cameraWorld)) || 1
+    backgroundPlanePosition = anchor.object3D.worldToLocal(planePoint.clone()).toArray()
+    return Math.min(...boxCorners(worldBounds).map((point) => plane.distanceToPoint(point) * cameraSide))
+  }
+
+  const ensureBackgroundClearance = () => {
+    if (!layoutReady) return
+    userScale = clamp(userScale, config.model.minScale, config.model.maxScale)
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      applyTransform(1)
+      transform.object3D.updateWorldMatrix(true, true)
+      backgroundDistance = measureBackgroundClearance()
+      if (!Number.isFinite(backgroundDistance) || backgroundDistance >= config.model.backgroundClearance) break
+      finalPosition.z += depthDirection * (config.model.backgroundClearance - backgroundDistance + 0.012)
+      entrancePosition.z += depthDirection * (config.model.backgroundClearance - backgroundDistance + 0.012)
+    }
+    applyTransform(1)
+  }
+
+  const updateDebugBounds = () => {
+    debugBoxHelper.visible = Boolean(debug && modelObject && modelRoot.object3D.visible)
+    if (!debugBoxHelper.visible) return
+    transform.object3D.updateWorldMatrix(true, true)
+    debugBounds.setFromObject(modelObject)
+    backgroundDistance = measureBackgroundClearance()
   }
 
   const updateHotspotAppearance = () => {
@@ -95,7 +206,6 @@ export function createPage2Model({
       const color = selected ? '#ff6a1a' : viewed ? '#ad7a31' : '#f4bd50'
       entity.querySelector('[data-hotspot-core]')?.setAttribute('material', 'color', color)
       entity.querySelector('[data-hotspot-ring]')?.setAttribute('material', 'color', color)
-      entity.classList.toggle('is-selected', selected)
     })
   }
 
@@ -109,6 +219,7 @@ export function createPage2Model({
   const configureLoadedModel = () => {
     modelObject = modelEntity.getObject3D('mesh')
     if (!modelObject) return
+    modelObject.updateWorldMatrix(true, true)
     modelObject.traverse((object) => {
       if (!object.isMesh || !object.material) return
       if (Array.isArray(object.material)) {
@@ -121,19 +232,24 @@ export function createPage2Model({
       object.castShadow = false
       object.receiveShadow = false
     })
-    loaded = true
-    loading = false
+    computeBoundsInModelSpace()
+    content.object3D.position.copy(modelLocalCenter).multiplyScalar(-1)
+    baseScale = config.model.targetWidthRatio / Math.max(modelLocalSize.x, 0.000001)
+    layoutReady = true
+    updateLayoutPositions()
+    applyHotspotPositions()
     setModelOpacity(0)
     applyTransform(0)
-    applyHotspotPositions()
-    onReady?.()
+    loaded = true
+    loading = false
+    onReady?.(getDebugState())
     if (entranceRequested) startEntrance()
   }
 
   const preload = () => {
     if (loaded || loading) return
     loading = true
-    modelEntity.setAttribute('gltf-model', '#page2-model-asset')
+    modelEntity.setAttribute('gltf-model', config.assets.model)
   }
 
   const startEntrance = () => {
@@ -146,6 +262,10 @@ export function createPage2Model({
     entranceElapsed = 0
     entranceActive = true
     selectedHotspotId = null
+    userScale = 1
+    yaw = 0
+    pitch = 0
+    ensureBackgroundClearance()
     setVisible(modelRoot, true)
     setVisible(hotspotRoot, false)
     setModelOpacity(0)
@@ -159,6 +279,8 @@ export function createPage2Model({
     pitch = 0
     selectedHotspotId = null
     selectedScreenPoint = null
+    updateLayoutPositions()
+    ensureBackgroundClearance()
     setModelOpacity(1)
     applyTransform(1)
     updateHotspotAppearance()
@@ -190,8 +312,7 @@ export function createPage2Model({
     getRay(clientX, clientY)
     let closest = null
     hotspotEntities.forEach((entity, id) => {
-      const mesh = entity.getObject3D('mesh') || entity.object3D
-      const hit = raycaster.intersectObject(mesh, true)[0]
+      const hit = raycaster.intersectObject(entity.object3D, true)[0]
       if (hit && (!closest || hit.distance < closest.distance)) closest = { id, distance: hit.distance }
     })
     if (!closest) return null
@@ -266,7 +387,10 @@ export function createPage2Model({
         onBlankSelected?.()
       }
     }
-    if (activePointers.size < 2) pinchStartDistance = 0
+    if (activePointers.size < 2) {
+      pinchStartDistance = 0
+      if (loaded && modelRoot.object3D.visible) ensureBackgroundClearance()
+    }
   }
 
   scene.canvas.addEventListener('pointerdown', onPointerDown)
@@ -283,6 +407,29 @@ export function createPage2Model({
   modelEntity.addEventListener('model-loaded', configureLoadedModel)
   modelEntity.addEventListener('model-error', handleModelError)
 
+  const getDebugState = () => ({
+    loaded,
+    loading,
+    layoutReady,
+    entranceActive,
+    userScale,
+    yaw,
+    pitch,
+    baseScale,
+    depthDirection,
+    stageOrigin: modelRoot.object3D.position.toArray(),
+    localBoundsCenter: modelLocalCenter.toArray(),
+    localBoundsSize: modelLocalSize.toArray(),
+    worldBoundsMin: worldBounds.min.toArray(),
+    worldBoundsMax: worldBounds.max.toArray(),
+    finalPosition: finalPosition.toArray(),
+    cardDistance,
+    backgroundDistance,
+    backgroundPlanePosition,
+    selectedHotspotId,
+    hotspots: hotspots.map((item) => ({ id: item.id, position: { ...item.position } })),
+  })
+
   setVisible(modelRoot, false)
   setVisible(hotspotRoot, false)
   applyHotspotPositions()
@@ -290,6 +437,11 @@ export function createPage2Model({
   return {
     preload,
     startEntrance,
+    setDepthDirection(sign) {
+      depthDirection = sign < 0 ? -1 : 1
+      updateLayoutPositions()
+      applyTransform(entranceActive ? 0 : 1)
+    },
     update(delta) {
       if (hotspotRoot.object3D.visible) {
         hotspotPulseElapsed += delta
@@ -301,11 +453,12 @@ export function createPage2Model({
         const raw = clamp(entranceElapsed / config.model.entranceDuration, 0, 1)
         const progress = easeOutQuart(raw)
         applyTransform(progress)
-        setModelOpacity(clamp((raw - 0.05) / 0.68, 0, 1))
+        setModelOpacity(clamp((raw - 0.04) / 0.7, 0, 1))
         if (raw >= 1) {
           entranceActive = false
           setModelOpacity(1)
           setVisible(hotspotRoot, true)
+          ensureBackgroundClearance()
           onEntranceComplete?.()
         }
       } else if (loaded && modelRoot.object3D.visible) {
@@ -337,6 +490,7 @@ export function createPage2Model({
           applyTransform(1)
         }
       }
+      updateDebugBounds()
     },
     markViewed(id) {
       hotspotEntities.get(id).dataset.viewed = 'true'
@@ -354,6 +508,7 @@ export function createPage2Model({
     show() {
       setVisible(modelRoot, true)
       if (loaded && !entranceActive) {
+        ensureBackgroundClearance()
         setModelOpacity(1)
         setVisible(hotspotRoot, true)
       }
@@ -366,10 +521,8 @@ export function createPage2Model({
     },
     setHotspotDebugVisible(visible) {
       axes.visible = visible
-      hotspotEntities.forEach((entity) => {
-        entity.dataset.debug = String(visible)
-        entity.querySelector('[data-hotspot-debug-label]')?.setAttribute('visible', visible)
-      })
+      debugBoxHelper.visible = visible
+      hotspotEntities.forEach((entity) => entity.querySelector('[data-hotspot-debug-label]')?.setAttribute('visible', visible))
     },
     updateHotspotPosition(id, axis, value) {
       const hotspot = hotspots.find((item) => item.id === id)
@@ -378,16 +531,7 @@ export function createPage2Model({
       applyHotspotPositions()
       onDebugChanged?.({ hotspots })
     },
-    getDebugState: () => ({
-      loaded,
-      loading,
-      entranceActive,
-      userScale,
-      yaw,
-      pitch,
-      selectedHotspotId,
-      hotspots: hotspots.map((item) => ({ id: item.id, position: { ...item.position } })),
-    }),
+    getDebugState,
     isLoaded: () => loaded,
     isEntering: () => entranceActive,
     destroy() {
@@ -397,10 +541,13 @@ export function createPage2Model({
       scene.canvas.removeEventListener('pointercancel', onPointerEnd)
       modelEntity.removeEventListener('model-loaded', configureLoadedModel)
       modelEntity.removeEventListener('model-error', handleModelError)
-      transform.object3D.remove(axes)
+      modelRoot.object3D.remove(axes)
+      scene.object3D.remove(debugBoxHelper)
       axes.geometry?.dispose()
       if (Array.isArray(axes.material)) axes.material.forEach((material) => material.dispose())
       else axes.material?.dispose()
+      debugBoxHelper.geometry?.dispose()
+      debugBoxHelper.material?.dispose()
       originalMaterials.forEach((_, material) => material.dispose())
     },
   }
