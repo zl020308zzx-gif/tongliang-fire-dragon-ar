@@ -272,9 +272,30 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
   setVisible(overviewRoot, false)
 
   const resetEntry = () => {
+    mode = 'prepared'
+    elapsed = 0
+    continuousElapsed = 0
+    lateReveals.clear()
     setVisible(overviewRoot, true)
     Object.values(groups).forEach((group) => group.object3D.position.set(0, 0, 0))
-    config.layers.forEach((layer) => setLayerPose(layer.key, 0))
+    config.layers.forEach((layer) => {
+      const options = {}
+      if (['intro-line', 'intro-text'].includes(layer.key)) options.x = -0.045
+      if (['map-main', 'map-text', 'map-tongliang'].includes(layer.key)) options.x = 0.045
+      if (layer.key === 'title') { options.up = 0.035; options.scaleFrom = 0.95 }
+      if (layer.key.startsWith('main-')) options.up = -0.045
+      if (layer.key.startsWith('types-')) options.scaleFrom = Math.max(0.9, finalPoses.get(layer.key)?.scale - 0.07)
+      if (layer.key.startsWith('timeline-')) options.up = -0.035
+      setLayerPose(layer.key, 0, options)
+      const entity = entities.get(layer.key)
+      if (entity) {
+        if (readyAssets.has(entity.dataset.page2AssetKey)) readyAtElapsed.set(layer.key, 0)
+        else readyAtElapsed.delete(layer.key)
+        entity.object3D.rotation.x = angle
+        entity.object3D.rotation.y = 0
+        entity.object3D.rotation.z = 0
+      }
+    })
     setOpacity(mapPulse, 0)
   }
 
@@ -300,10 +321,8 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     },
     resetEntry,
     startEntry() {
-      elapsed = 0
-      continuousElapsed = 0
-      mode = 'entering'
       resetEntry()
+      mode = 'entering'
     },
     startExit() {
       if (mode === 'exiting') return

@@ -938,6 +938,65 @@ canvas {
 }
 
 /* Page 2｜龙脉探源：与第一页共享同一 MindAR 场景和摄像机。 */
+.page2-loading-status {
+  display: none;
+  position: fixed;
+  z-index: 29;
+  right: 14px;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px));
+  left: 14px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px 10px;
+  width: min(430px, calc(100% - 28px));
+  margin: auto;
+  padding: 11px 13px;
+  border: 1px solid rgba(223, 160, 69, .52);
+  border-radius: 13px;
+  color: #f4d89e;
+  background: linear-gradient(135deg, rgba(28, 8, 5, .94), rgba(54, 15, 8, .9));
+  box-shadow: 0 9px 28px rgba(0, 0, 0, .38), inset 0 0 16px rgba(214, 102, 34, .08);
+  pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+  font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
+}
+
+.page1-ar.is-page2-route .page2-loading-status { display: grid; }
+.page2-loading-status[hidden] { display: none !important; }
+.page2-loading-status.is-complete { opacity: 0; transform: translateY(8px); }
+.page2-loading-emblem {
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(246, 188, 83, .8);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 5px rgba(119, 35, 13, .7), 0 0 13px rgba(234, 113, 39, .28);
+  animation: page2-loading-pulse 1.35s ease-in-out infinite;
+}
+.page2-loading-copy { min-width: 0; }
+.page2-loading-copy strong,
+.page2-loading-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page2-loading-copy strong { color: #ffd888; font-size: 13px; letter-spacing: .06em; }
+.page2-loading-copy small { margin-top: 3px; color: #d9b77b; font: 11px/1.2 system-ui, sans-serif; }
+.page2-loading-status > [data-page2-loading-count] { color: #d6a953; font: 10px/1 system-ui, sans-serif; white-space: nowrap; }
+.page2-loading-track {
+  grid-column: 2 / -1;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 222, 158, .14);
+}
+.page2-loading-track i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8f2d18, #e87a32, #f4ca69);
+  box-shadow: 0 0 8px rgba(236, 128, 45, .6);
+  transition: width .18s ease;
+}
+@keyframes page2-loading-pulse { 50% { transform: scale(.88); opacity: .68; } }
+
 .page2-ui {
   display: none;
   position: fixed;

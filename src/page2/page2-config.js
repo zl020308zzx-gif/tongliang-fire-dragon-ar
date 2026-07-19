@@ -64,7 +64,7 @@ const layers = layerKeys.map((key, layerIndex) => {
 
 export const PAGE2_CONFIG = {
   targetIndex: 1,
-  overviewStableDelay: 350,
+  overviewStableDelay: 250,
   overviewEntranceDuration: 3200,
   overviewDepthDirection: 'card-front',
   markerAspect: 210 / 148,
@@ -72,6 +72,26 @@ export const PAGE2_CONFIG = {
   targets: assetUrl('assets/markers/targets.mind'),
   spatial,
   layers,
+  floorBase: {
+    enabled: true,
+    widthUnit: 1,
+    depthUnit: 1.418918919,
+    clearanceMm: 2,
+    clearanceUnit: 0.013513514,
+    initialClearanceUnit: 1 / 148,
+    fadeDuration: 250,
+    color: '#180806',
+    opacity: 0.96,
+    roughness: 1,
+    metalness: 0,
+    renderOrder: -100,
+  },
+  rescanReplay: {
+    enabled: true,
+    lostThresholdMs: 800,
+    stableDelayMs: 250,
+    replayFullEntrance: true,
+  },
   assets: {
     background: page2Asset('background/page2-bg-full.png'),
     title: page2Asset('title/page2-title-group.png'),

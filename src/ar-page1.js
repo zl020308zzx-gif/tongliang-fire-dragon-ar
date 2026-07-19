@@ -7,6 +7,7 @@ import { createPanelRiseController } from './tilt-controller.js'
 import { createStableAnchorController } from './stable-anchor-controller.js'
 import { PAGE2_CONFIG } from './page2/page2-config.js'
 import { createPage2Experience, page2AssetsMarkup, page2SceneMarkup, page2UiMarkup } from './page2/page2.js'
+import { startPage2Preload } from './page2/page2-preloader.js'
 
 export const AR_PAGE1_STATES = Object.freeze({
   AR_NOT_STARTED: 'AR_NOT_STARTED',
@@ -100,7 +101,7 @@ export function renderArPage1(root) {
   }
 
   root.innerHTML = `
-    <main class="page1-preview page1-ar" style="--color-mask-url: url('${config.assets.colorMask}')">
+    <main class="page1-preview page1-ar${page2Entry ? ' is-page2-route' : ''}" style="--color-mask-url: url('${config.assets.colorMask}')">
       <div class="ar-runtime-assets" hidden>
         <img id="marker-reference" src="${config.ar.markerImage}" alt="" draggable="false" />
         <img id="craft-panel-asset" src="${config.assets.backgroundBoard}" alt="" draggable="false" />
@@ -237,6 +238,7 @@ export function renderArPage1(root) {
   const target = root.querySelector('#page1-target')
   const page2Target = root.querySelector('#page2-target')
   const page2Anchor = root.querySelector('#page2-anchor')
+  const page2Preloader = page2Entry ? startPage2Preload({ root, config: PAGE2_CONFIG, debug: page2Debug }) : null
   const stableAnchor = root.querySelector('#stableAnchor')
   const panelHinge = root.querySelector('#panelHinge')
   const panelContent = root.querySelector('#panelContent')
@@ -716,6 +718,7 @@ export function renderArPage1(root) {
           anchor: page2Anchor,
           config: PAGE2_CONFIG,
           debug: page2Debug,
+          preloader: page2Preloader,
           onActivate() {
             stableAnchorController?.setTracked(false)
             setEntityVisible(stableAnchor, false)

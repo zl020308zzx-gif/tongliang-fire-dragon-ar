@@ -4,6 +4,8 @@ import { PAGE2_HOTSPOTS, createPage2Progress } from './page2-hotspots.js'
 import { createPage2Model } from './page2-model.js'
 import { createPage2Overview } from './page2-overview.js'
 import { createPage2Particles } from './page2-particles.js'
+import { createPage2Floor } from './page2-floor.js'
+import { PAGE2_ASSET_ENTRIES, startPage2Preload } from './page2-preloader.js'
 import { PAGE2_CONFIG, PAGE2_STATES } from './page2-config.js'
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value))
@@ -21,77 +23,9 @@ const easeInOutCubic = (value) => {
   return t < 0.5 ? 4 * t ** 3 : 1 - ((-2 * t + 2) ** 3) / 2
 }
 
-const assetEntries = [
-  ['page2-background-asset', 'background'],
-  ['page2-title-asset', 'title'],
-  ['page2-intro-dragon-asset', 'introDragon'],
-  ['page2-intro-text-asset', 'introText'],
-  ['page2-map-main-asset', 'mapMain'],
-  ['page2-map-text-asset', 'mapText'],
-  ['page2-map-tongliang-asset', 'mapTongliang'],
-  ['page2-main-base-asset', 'mainBase'],
-  ['page2-main-ring-asset', 'mainRing'],
-  ['page2-main-scene-asset', 'mainScene'],
-  ['page2-main-sparks-asset', 'mainSparks'],
-  ['page2-main-performers-asset', 'mainPerformers'],
-  ['page2-main-dancers-asset', 'mainDancers'],
-  ['page2-main-dragon-asset', 'mainDragon'],
-  ['page2-main-pearl-asset', 'mainPearl'],
-  ['page2-types-title-asset', 'typesTitle'],
-  ['page2-types-back-asset', 'typesBack'],
-  ['page2-types-mid-asset', 'typesMid'],
-  ['page2-types-front-asset', 'typesFront'],
-  ['page2-timeline-base-asset', 'timelineBase'],
-  ['page2-timeline-nodes-asset', 'timelineNodes'],
-  ['page2-timeline-texts-asset', 'timelineTexts'],
-]
-
-const assetBatches = [
-  ['background', 'title'],
-  ['introDragon', 'introText', 'mapMain', 'mapText', 'mapTongliang'],
-  ['mainBase', 'mainRing', 'mainScene', 'mainSparks', 'mainPerformers', 'mainDancers', 'mainDragon', 'mainPearl'],
-  ['typesTitle', 'typesBack', 'typesMid', 'typesFront', 'timelineBase', 'timelineNodes', 'timelineTexts'],
-]
+const assetEntries = PAGE2_ASSET_ENTRIES
 
 const assetEntryByKey = new Map(assetEntries.map(([id, key]) => [key, id]))
-
-export async function waitForImageReady(img, url) {
-  if (!(img instanceof HTMLImageElement)) throw new Error(`[page2] Missing image element: ${url}`)
-
-  const absoluteUrl = new URL(url, document.baseURI).href
-  const currentUrl = img.currentSrc || img.src
-  if (currentUrl !== absoluteUrl || !img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
-    await new Promise((resolve, reject) => {
-      const cleanup = () => {
-        img.removeEventListener('load', onLoad)
-        img.removeEventListener('error', onError)
-      }
-      const onLoad = () => { cleanup(); resolve() }
-      const onError = () => {
-        cleanup()
-        reject(new Error(`[page2] Image load failed: ${url}`))
-      }
-      img.addEventListener('load', onLoad, { once: true })
-      img.addEventListener('error', onError, { once: true })
-      if (currentUrl !== absoluteUrl) img.src = url
-      else if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) onLoad()
-    })
-  }
-
-  if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
-    throw new Error(`[page2] Image incomplete: ${url}`)
-  }
-
-  if (typeof img.decode === 'function') {
-    try {
-      await img.decode()
-    } catch (error) {
-      if (img.naturalWidth <= 0 || img.naturalHeight <= 0) throw error
-    }
-  }
-
-  return img
-}
 
 const resolvePage2Config = (config) => {
   const source = config && typeof config === 'object' ? config : {}
@@ -103,6 +37,8 @@ const resolvePage2Config = (config) => {
     map: { ...PAGE2_CONFIG.map, ...(source.map || {}) },
     mainVisual: { ...PAGE2_CONFIG.mainVisual, ...(source.mainVisual || {}) },
     fireEntryHotspot: { ...PAGE2_CONFIG.fireEntryHotspot, ...(source.fireEntryHotspot || {}) },
+    floorBase: { ...PAGE2_CONFIG.floorBase, ...(source.floorBase || {}) },
+    rescanReplay: { ...PAGE2_CONFIG.rescanReplay, ...(source.rescanReplay || {}) },
     spatial: { ...PAGE2_CONFIG.spatial, ...(source.spatial || {}) },
     model: { ...PAGE2_CONFIG.model, ...(source.model || {}) },
     hotspots: { ...PAGE2_CONFIG.hotspots, ...(source.hotspots || {}) },
@@ -148,6 +84,7 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
         material="transparent: true; opacity: 0; side: double"></a-plane>
     </a-entity>
     <a-entity id="page2-anchor" visible="false">
+      <a-entity id="page2-floor-base" data-page2-floor-base visible="false"></a-entity>
       <a-entity id="page2-background-root" visible="false" position="${hinge.x} ${hinge.y} ${hinge.z}"
         rotation="${config.background.startRotationX} 0 0">
         <a-entity id="page2-board-center" position="0 ${height / 2} 0">
@@ -235,6 +172,15 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
 }
 
 export const page2UiMarkup = (config, debug = false) => `
+  <section id="page2-loading-status" class="page2-loading-status" role="status" aria-live="polite">
+    <span class="page2-loading-emblem" aria-hidden="true"></span>
+    <div class="page2-loading-copy">
+      <strong>正在准备龙脉图景</strong>
+      <small data-page2-loading-detail>正在加载空间背景</small>
+    </div>
+    <div class="page2-loading-track" aria-hidden="true"><i data-page2-loading-progress></i></div>
+    <span data-page2-loading-count>已准备 0 / 22</span>
+  </section>
   <section class="page2-ui" aria-label="龙脉探源 AR 界面">
     <header class="page2-title"><span>02</span><h1>龙脉探源</h1></header>
     <section class="page2-guide page2-glass-card" role="status" hidden>
@@ -271,6 +217,13 @@ export const page2UiMarkup = (config, debug = false) => `
     <p>entrance <b data-page2-debug-entrance>false</b>｜progress <b data-page2-debug-progress>0%</b></p>
     <p>overview ready <b data-page2-debug-overview>false</b>｜visible layers <b data-page2-debug-visible>0</b></p>
     <p>model loaded <b data-page2-debug-model>false</b>｜failed assets <b data-page2-debug-failed>0</b></p>
+    <p>scan session <b data-page2-debug-session>0</b>｜run <b data-page2-debug-run>0</b></p>
+    <p>target visible <b data-page2-debug-target>false</b>｜lost <b data-page2-debug-lost>0 ms</b></p>
+    <p>replay armed <b data-page2-debug-replay>true</b>｜resources <b data-page2-debug-resources>false</b></p>
+    <p>floor <b data-page2-debug-floor>${config.floorBase.widthUnit.toFixed(3)} × ${config.floorBase.depthUnit.toFixed(3)}</b>｜clearance <b>${config.floorBase.clearanceMm}mm</b></p>
+    <p>floor world <b data-page2-debug-floor-world>—</b></p>
+    <p>floor axes <b data-page2-debug-floor-axes>—</b></p>
+    <p>background angle <b data-page2-debug-board-angle>${config.background.startRotationX}°</b></p>
     <p>depth direction <b data-page2-debug-depth>?</b></p>
     <label>圆环 X <input data-page2-debug="ring-x" type="number" step=".001" value="${config.mainVisual.ringCenterX}"></label>
     <label>圆环 Y <input data-page2-debug="ring-y" type="number" step=".001" value="${config.mainVisual.ringCenterY}"></label>
@@ -304,7 +257,7 @@ const setVisible = (entity, visible) => {
   entity.setAttribute('visible', visible)
 }
 
-export function createPage2Experience({ root, scene, target, anchor, config, debug, onActivate }) {
+export function createPage2Experience({ root, scene, target, anchor, config, debug, preloader = null, onActivate }) {
   const THREE = window.AFRAME.THREE
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
   const abortController = new AbortController()
@@ -351,7 +304,10 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   let depthDirection = -1
   let destroyed = false
   let assetLoadingPromise = null
-  let assetLoadingStatusTimer = 0
+  let bindingFrame = 0
+  let replayGuideTimer = 0
+  const bindingQueue = []
+  const bindingPromises = new Map()
   const assetStatus = new Map(assetEntries.map(([, key]) => [key, 'deferred']))
   const pendingAnimationFrames = new Set()
   const page2Runtime = {
@@ -361,6 +317,12 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     backgroundReady: false,
     criticalAssetsReady: false,
     allAssetsSettled: false,
+    resourcesLoaded: false,
+    targetVisible: false,
+    lostStartedAt: 0,
+    replayArmed: true,
+    scanSessionId: 0,
+    entranceRunId: 0,
     trackingStable: false,
     entranceRequested: false,
     entranceStarted: false,
@@ -368,6 +330,8 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     visibleLayerCount: 0,
     failedAssets: new Map(),
   }
+
+  const preloadSession = preloader || startPage2Preload({ root, config, debug })
 
   const debugLog = (event, detail = '') => {
     if (debug) console.info(`[page2] ${event}`, detail)
@@ -412,6 +376,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   }
 
   const particles = createPage2Particles({ root, config })
+  const floorBase = createPage2Floor({ root, config, debug })
   let overview
   const model = createPage2Model({
     root,
@@ -510,6 +475,17 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     root.querySelector('[data-page2-debug-visible]')?.replaceChildren(String(page2Runtime.visibleLayerCount))
     root.querySelector('[data-page2-debug-model]')?.replaceChildren(String(page2ModelLoaded))
     root.querySelector('[data-page2-debug-failed]')?.replaceChildren(String(page2Runtime.failedAssets.size))
+    root.querySelector('[data-page2-debug-session]')?.replaceChildren(String(page2Runtime.scanSessionId))
+    root.querySelector('[data-page2-debug-run]')?.replaceChildren(String(page2Runtime.entranceRunId))
+    root.querySelector('[data-page2-debug-target]')?.replaceChildren(String(page2Runtime.targetVisible))
+    const lostDuration = page2Runtime.lostStartedAt ? performance.now() - page2Runtime.lostStartedAt : 0
+    root.querySelector('[data-page2-debug-lost]')?.replaceChildren(`${Math.round(lostDuration)} ms`)
+    root.querySelector('[data-page2-debug-replay]')?.replaceChildren(String(page2Runtime.replayArmed))
+    root.querySelector('[data-page2-debug-resources]')?.replaceChildren(String(page2Runtime.resourcesLoaded))
+    const floorDebug = floorBase.getDebugState()
+    root.querySelector('[data-page2-debug-floor-world]')?.replaceChildren(floorDebug.worldPosition.map((value) => value.toFixed(3)).join(', '))
+    root.querySelector('[data-page2-debug-floor-axes]')?.replaceChildren('X / Y / +Z')
+    root.querySelector('[data-page2-debug-board-angle]')?.replaceChildren(`${THREE.MathUtils.radToDeg(backgroundRoot.object3D.rotation.x).toFixed(1)}°`)
     root.querySelector('[data-page2-debug-depth]')?.replaceChildren('card front (-Y), up (+Z)')
   }
 
@@ -520,11 +496,12 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     updateReadinessDebug()
   }
 
-  const afterTwoAnimationFrames = (callback) => {
+  const afterTwoAnimationFrames = (callback, runId = null) => {
     const first = requestAnimationFrame(() => {
       pendingAnimationFrames.delete(first)
       const second = requestAnimationFrame(() => {
         pendingAnimationFrames.delete(second)
+        if (runId !== null && runId !== page2Runtime.entranceRunId) return
         callback()
       })
       pendingAnimationFrames.add(second)
@@ -533,6 +510,44 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   }
 
   const waitTwoAnimationFrames = () => new Promise((resolve) => afterTwoAnimationFrames(resolve))
+
+  const resetPage2EntranceVisualState = () => {
+    page2Runtime.entranceRunId += 1
+    page2Runtime.entranceStarted = false
+    page2Runtime.entranceCompleted = false
+    page2Runtime.trackingStable = false
+    page2EntranceProgress = 0
+    backgroundElapsed = 0
+    stableElapsed = 0
+    entranceAnimationFinished = false
+    entranceTimelineActive = false
+    entranceFramePending = false
+    visibilityRetryElapsed = 0
+    overview.resetEntry()
+    floorBase.reset(page2Runtime.entranceRunId)
+    backgroundRoot.object3D.rotation.x = THREE.MathUtils.degToRad(
+      finiteOr(config.background.startRotationX, 0, 'background.startRotationX'),
+    )
+    setVisible(backgroundRoot, false)
+    model.hide()
+    particles.hide()
+    setDarkness(0)
+    closeCard()
+    enableModelUi(false)
+    setHtmlVisible(completeCard, false)
+    setHtmlVisible(overviewHint, false)
+    setHtmlVisible(guide, true)
+    guideText.textContent = page2Runtime.scanSessionId > 1 ? '正在重新展开龙脉图景' : '正在展开龙脉图景'
+    window.clearTimeout(replayGuideTimer)
+    if (page2Runtime.scanSessionId > 1) {
+      const currentRunId = page2Runtime.entranceRunId
+      replayGuideTimer = window.setTimeout(() => {
+        if (tracked && currentRunId === page2Runtime.entranceRunId) setHtmlVisible(guide, false)
+      }, 420)
+    }
+    debugLog('page2EntranceReset', { scanSessionId: page2Runtime.scanSessionId, runId: page2Runtime.entranceRunId })
+    updateReadinessDebug()
+  }
 
   const finalizeOverviewIfVisible = () => {
     if (!entranceAnimationFinished || page2Runtime.entranceCompleted || !tracked || suspended) return false
@@ -579,6 +594,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     }
 
     page2Runtime.entranceCompleted = true
+    floorBase.showFinal()
     visibilityFailureLogged = false
     setState(PAGE2_STATES.OVERVIEW)
     setHtmlVisible(guide, false)
@@ -589,23 +605,34 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     return true
   }
 
-  const maybeStartPage2Entrance = () => {
-    debugLog('page2EntranceRequested', {
-      backgroundReady: page2Runtime.backgroundReady,
-      criticalAssetsReady: page2Runtime.criticalAssetsReady,
-      trackingStable: page2Runtime.trackingStable,
-    })
-    if (destroyed || !tracked || suspended || !page2Runtime.entranceRequested) return
-    if (!page2Runtime.backgroundReady || !page2Runtime.criticalAssetsReady || !page2Runtime.trackingStable) return
-    if (page2Runtime.entranceStarted || page2Runtime.entranceCompleted || entranceFramePending) return
-    entranceFramePending = true
-    page2EntranceProgress = 0
-    backgroundElapsed = 0
-    setHtmlVisible(guide, false)
+  const maybeStartBackgroundTimeline = () => {
+    if (!page2Runtime.entranceStarted || entranceTimelineActive || !page2Runtime.backgroundReady) return
+    const currentRunId = page2Runtime.entranceRunId
     setVisible(backgroundRoot, true)
     backgroundRoot.object3D.rotation.x = THREE.MathUtils.degToRad(
       finiteOr(config.background.startRotationX, 0, 'background.startRotationX'),
     )
+    overview.startEntry()
+    entranceTimelineActive = true
+    entranceAnimationFinished = false
+    if (page2Runtime.scanSessionId <= 1) setHtmlVisible(guide, false)
+    debugLog('page2BackgroundEntranceStarted', { runId: currentRunId })
+  }
+
+  const maybeStartPage2Entrance = () => {
+    debugLog('page2EntranceRequested', {
+      backgroundReady: page2Runtime.backgroundReady,
+      trackingStable: page2Runtime.trackingStable,
+    })
+    if (destroyed || !tracked || suspended || !page2Runtime.entranceRequested) return
+    if (!page2Runtime.trackingStable) return
+    if (page2Runtime.entranceStarted || page2Runtime.entranceCompleted || entranceFramePending) return
+    const currentRunId = page2Runtime.entranceRunId
+    entranceFramePending = true
+    page2EntranceProgress = 0
+    backgroundElapsed = 0
+    floorBase.start(currentRunId)
+    guideText.textContent = page2Runtime.backgroundReady ? '正在展开龙脉图景' : '识别成功，正在展开龙脉图景'
     setState(PAGE2_STATES.OVERVIEW_ENTERING)
     updateReadinessDebug()
     afterTwoAnimationFrames(() => {
@@ -615,14 +642,11 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
         return
       }
       page2Runtime.entranceStarted = true
-      entranceAnimationFinished = false
       detectDepthDirection()
-      overview.resetEntry()
-      overview.startEntry()
-      entranceTimelineActive = true
-      debugLog('page2EntranceStarted', true)
+      maybeStartBackgroundTimeline()
+      debugLog('page2EntranceStarted', { runId: currentRunId, backgroundReady: page2Runtime.backgroundReady })
       updateReadinessDebug()
-    })
+    }, currentRunId)
   }
 
   const isSettled = (key) => ['loaded', 'failed'].includes(assetStatus.get(key))
@@ -640,20 +664,18 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   const updateAssetReadiness = () => {
     const previousCritical = page2Runtime.criticalAssetsReady
     const previousSettled = page2Runtime.allAssetsSettled
-    const introOrMapReady = ['introDragon', 'introText', 'mapMain', 'mapText', 'mapTongliang'].some(isLoaded)
-    const mainReady = ['mainBase', 'mainRing', 'mainScene', 'mainSparks', 'mainPerformers', 'mainDancers', 'mainDragon', 'mainPearl'].some(isLoaded)
+    const preloadSnapshot = preloadSession.getSnapshot()
+    page2Runtime.resourcesLoaded = preloadSnapshot.resourcesLoaded
     page2Runtime.backgroundReady = isLoaded('background')
     page2Runtime.criticalAssetsReady = page2Runtime.backgroundReady
-      && isSettled('title')
-      && introOrMapReady
-      && mainReady
-    page2Runtime.allAssetsSettled = assetEntries.every(([, key]) => isSettled(key))
+    page2Runtime.allAssetsSettled = preloadSnapshot.settledCount === preloadSnapshot.totalCount
 
     if (!previousCritical && page2Runtime.criticalAssetsReady) debugLog('criticalAssetsReady', true)
     if (!previousSettled && page2Runtime.allAssetsSettled) debugLog('page2AllAssetsSettled', true)
     updateReadinessDebug()
     renderDebugOutput()
     maybeStartPage2Entrance()
+    maybeStartBackgroundTimeline()
     if (entranceAnimationFinished) finalizeOverviewIfVisible()
   }
 
@@ -676,14 +698,32 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     markLayerReady(key)
   }
 
-  const loadAsset = async (key) => {
+  const scheduleBindingDrain = () => {
+    if (bindingFrame || destroyed || bindingQueue.length === 0) return
+    bindingFrame = requestAnimationFrame(async () => {
+      pendingAnimationFrames.delete(bindingFrame)
+      bindingFrame = 0
+      const jobs = bindingQueue.splice(0, 2)
+      await Promise.allSettled(jobs.map(async ({ task, resolve, reject }) => {
+        try { resolve(await task()) } catch (error) { reject(error) }
+      }))
+      scheduleBindingDrain()
+    })
+    pendingAnimationFrames.add(bindingFrame)
+  }
+
+  const enqueueBinding = (task) => new Promise((resolve, reject) => {
+    bindingQueue.push({ task, resolve, reject })
+    scheduleBindingDrain()
+  })
+
+  const loadAsset = (key) => {
     if (isLoaded(key)) return { key, status: 'already-loaded' }
+    if (bindingPromises.has(key)) return bindingPromises.get(key)
     const id = assetEntryByKey.get(key)
-    const imageElement = root.querySelector(`#${id}`)
     const url = config.assets[key]
     assetStatus.set(key, 'loading')
-    try {
-      const readyImage = await waitForImageReady(imageElement, url)
+    const promise = preloadSession.preloadImage(key).then((readyImage) => enqueueBinding(async () => {
       debugLog('layerLoaded', { layerId: key, fileName: url.split('/').pop(), url: readyImage.currentSrc || readyImage.src })
       debugLog('layerDecoded', { layerId: key, fileName: url.split('/').pop(), url: readyImage.currentSrc || readyImage.src })
       await bindReadyImage(id, key, readyImage)
@@ -691,7 +731,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       if (key === 'background') debugLog('page2BackgroundReady', { decoded: true, path: url })
       updateAssetReadiness()
       return { key, status: 'loaded', url }
-    } catch (error) {
+    })).catch((error) => {
       assetStatus.set(key, 'failed')
       page2Runtime.failedAssets.set(key, { url, error: error?.message || String(error) })
       console.error('[page2] Asset failed', { layerId: key, fileName: url?.split('/').pop(), url, error })
@@ -701,35 +741,38 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       }
       updateAssetReadiness()
       throw error
-    }
+    })
+    bindingPromises.set(key, promise)
+    return promise
   }
 
   const startAssetLoading = () => {
     if (assetLoadingPromise || destroyed) return assetLoadingPromise
     assetLoadingPromise = (async () => {
-      const batchResults = []
-      for (const batch of assetBatches) {
-        if (destroyed) break
-        batchResults.push(await Promise.allSettled(batch.map(loadAsset)))
-      }
+      const results = await Promise.allSettled(assetEntries.map(([, key]) => loadAsset(key)))
       updateAssetReadiness()
-      return batchResults
+      return results
     })()
-    assetLoadingStatusTimer = window.setTimeout(() => {
-      if (!page2Runtime.backgroundReady && tracked) {
-        setHtmlVisible(guide, true)
-        guideText.textContent = '正在加载可视化资源'
-        debugLog('page2BackgroundPending', '700ms elapsed; waiting for real load/decode')
-      }
-    }, 700)
     updateAssetReadiness()
     return assetLoadingPromise
   }
 
-  const activate = ({ resumed = false } = {}) => {
-    debugLog('targetFound', { resumed })
+  const unsubscribePreload = preloadSession.subscribe((snapshot) => {
+    page2Runtime.resourcesLoaded = snapshot.resourcesLoaded
+    page2Runtime.allAssetsSettled = snapshot.settledCount === snapshot.totalCount
+    if (tracked && page2Runtime.entranceStarted && !page2Runtime.backgroundReady) {
+      guideText.textContent = '识别成功，正在展开龙脉图景'
+    }
+    updateReadinessDebug()
+  })
+
+  const activate = ({ replay = page2Runtime.replayArmed } = {}) => {
+    const lostDuration = page2Runtime.lostStartedAt ? performance.now() - page2Runtime.lostStartedAt : 0
+    debugLog('targetFound', { replay, lostDuration })
     suspended = false
     tracked = true
+    page2Runtime.targetVisible = true
+    page2Runtime.lostStartedAt = 0
     page2Runtime.entranceRequested = true
     root.querySelector('.page1-ar')?.classList.add('is-page2-active')
     onActivate?.()
@@ -737,40 +780,29 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     startAssetLoading()
     model.preload()
     setHtmlVisible(lostNotice, false)
-    if (resumed && resumeState !== PAGE2_STATES.HIDDEN) {
+    if (!replay && resumeState !== PAGE2_STATES.HIDDEN) {
       setState(resumeState)
       setHtmlVisible(guide, state === PAGE2_STATES.GUIDE)
       setHtmlVisible(overviewHint, state === PAGE2_STATES.OVERVIEW)
       if ([PAGE2_STATES.MODEL, PAGE2_STATES.COMPLETE].includes(state)) enableModelUi(true)
       setHtmlVisible(completeCard, state === PAGE2_STATES.COMPLETE)
       if (state === PAGE2_STATES.GUIDE) maybeStartPage2Entrance()
-      if (state === PAGE2_STATES.OVERVIEW_ENTERING && !entranceTimelineActive) {
-        page2Runtime.entranceStarted = false
-        maybeStartPage2Entrance()
-      }
+      if (state === PAGE2_STATES.OVERVIEW_ENTERING) maybeStartBackgroundTimeline()
+      updateReadinessDebug()
       return
     }
+    page2Runtime.scanSessionId += 1
+    page2Runtime.replayArmed = false
     setState(PAGE2_STATES.GUIDE)
-    stableElapsed = 0
-    backgroundElapsed = 0
-    page2Runtime.trackingStable = false
-    page2Runtime.entranceStarted = false
-    page2Runtime.entranceCompleted = false
-    page2EntranceProgress = 0
-    entranceAnimationFinished = false
-    entranceTimelineActive = false
-    entranceFramePending = false
-    overview.resetEntry()
-    setVisible(backgroundRoot, false)
-    setHtmlVisible(guide, true)
-    guideText.textContent = '请保持识别图平放，缓慢抬起手机观看'
-    updateReadinessDebug()
+    resetPage2EntranceVisualState()
   }
 
   const loseTracking = () => {
     if (!tracked) return
     debugLog('targetLost', { state })
     tracked = false
+    page2Runtime.targetVisible = false
+    page2Runtime.lostStartedAt = performance.now()
     resumeState = state
     if (state === PAGE2_STATES.GUIDE) {
       stableElapsed = 0
@@ -787,15 +819,40 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     updateReadinessDebug()
   }
 
+  const confirmReplayAfterLoss = () => {
+    if (tracked || !page2Runtime.lostStartedAt) return
+    const lostDuration = performance.now() - page2Runtime.lostStartedAt
+    if (!config.rescanReplay.enabled || lostDuration < config.rescanReplay.lostThresholdMs) return
+    page2Runtime.replayArmed = true
+    page2Runtime.entranceRunId += 1
+    entranceFramePending = false
+    entranceTimelineActive = false
+    entranceAnimationFinished = false
+    overview.resetEntry()
+    overview.hide()
+    floorBase.hide()
+    setVisible(backgroundRoot, false)
+    model.hide()
+    particles.hide()
+    setHtmlVisible(overviewHint, false)
+    debugLog('page2ReplayArmed', { lostDuration, runId: page2Runtime.entranceRunId })
+    updateReadinessDebug()
+  }
+
   lifecycle = createTargetLifecycle({
     target,
-    lostDelayMs: config.trackingSmoothing.lostHoldDuration,
+    lostDelayMs: config.rescanReplay.lostThresholdMs,
     signal,
     onFound({ firstFound }) {
-      activate({ resumed: !firstFound && resumeState !== PAGE2_STATES.HIDDEN })
+      const shouldReplay = firstFound
+        || (page2Runtime.replayArmed && config.rescanReplay.enabled && config.rescanReplay.replayFullEntrance)
+      activate({ replay: shouldReplay })
     },
     onLost: loseTracking,
-    onLostConfirmed: () => setHtmlVisible(lostNotice, true),
+    onLostConfirmed: () => {
+      confirmReplayAfterLoss()
+      setHtmlVisible(lostNotice, true)
+    },
     onDebug: () => {},
   })
 
@@ -871,10 +928,11 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       if (debug) renderDebugOutput()
     }
     if (!tracked || suspended || state === PAGE2_STATES.TRACKING_LOST) return
+    floorBase.update(delta, page2Runtime.entranceRunId)
     if (state === PAGE2_STATES.GUIDE) {
       if (stable.hasValidFullTransform()) stableElapsed += delta
       else stableElapsed = 0
-      if (!page2Runtime.trackingStable && stableElapsed >= config.overviewStableDelay) {
+      if (!page2Runtime.trackingStable && stableElapsed >= config.rescanReplay.stableDelayMs) {
         page2Runtime.trackingStable = true
         debugLog('page2TrackingStable', true)
         guideText.textContent = '视角已就绪'
@@ -953,7 +1011,19 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
         page2EntranceProgress,
         visibleLayerCount: page2Runtime.visibleLayerCount,
         page2ModelLoaded,
+        resourcesLoaded: page2Runtime.resourcesLoaded,
+        targetVisible: page2Runtime.targetVisible,
+        lostDurationMs: page2Runtime.lostStartedAt ? performance.now() - page2Runtime.lostStartedAt : 0,
+        replayArmed: page2Runtime.replayArmed,
+        scanSessionId: page2Runtime.scanSessionId,
+        entranceRunId: page2Runtime.entranceRunId,
       },
+      preload: {
+        ...preloadSession.getSnapshot(),
+        status: Object.fromEntries(preloadSession.getSnapshot().status),
+        concurrency: preloadSession.concurrency,
+      },
+      floorBase: floorBase.getDebugState(),
       depthDirection,
       spatial: config.spatial,
       layers: config.layers,
@@ -974,6 +1044,23 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   }
 
   if (debug) {
+    const placeDebugAnchor = () => {
+      anchor.object3D.position.set(0, -1.08, -3.15)
+      anchor.object3D.quaternion.identity()
+      anchor.object3D.scale.setScalar(1.4)
+      setVisible(anchor, true)
+    }
+    const simulateRecognition = ({ fullReplay = false } = {}) => {
+      if (fullReplay && tracked) {
+        loseTracking()
+        page2Runtime.lostStartedAt = performance.now() - config.rescanReplay.lostThresholdMs
+        confirmReplayAfterLoss()
+      }
+      activate({ replay: fullReplay || page2Runtime.replayArmed })
+      placeDebugAnchor()
+      page2Runtime.trackingStable = true
+      maybeStartPage2Entrance()
+    }
     const hotspotSelect = root.querySelector('[data-page2-debug="hotspot-id"]')
     const syncHotspotInputs = () => {
       const hotspot = PAGE2_HOTSPOTS.find((item) => item.id === hotspotSelect.value)
@@ -1003,14 +1090,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       console.info('[page2] 当前调试配置', JSON.parse(root.querySelector('[data-page2-debug-output]').textContent))
     }, { signal })
     root.querySelector('[data-page2-debug-action="simulate"]').addEventListener('click', () => {
-      activate()
-      anchor.object3D.position.set(0, -1.08, -3.15)
-      anchor.object3D.quaternion.identity()
-      anchor.object3D.scale.setScalar(1.4)
-      setVisible(anchor, true)
-      page2Runtime.trackingStable = true
-      page2Runtime.entranceStarted = false
-      maybeStartPage2Entrance()
+      simulateRecognition({ fullReplay: tracked })
     }, { signal })
     root.querySelector('[data-page2-debug-action="model"]').addEventListener('click', startModelTransition, { signal })
     syncHotspotInputs()
@@ -1018,16 +1098,23 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     window.page2Debug = {
       config,
       hotspots: PAGE2_HOTSPOTS,
-      activate,
+      activate: () => simulateRecognition(),
+      simulateShortJitter() {
+        if (!tracked) return
+        loseTracking()
+        window.setTimeout(() => {
+          activate({ replay: false })
+          placeDebugAnchor()
+        }, Math.min(300, config.rescanReplay.lostThresholdMs - 1))
+      },
+      simulateRescan() { simulateRecognition({ fullReplay: true }) },
       enterModel: startModelTransition,
       showOverview: () => {
-        activate()
-        anchor.object3D.position.set(0, -1.08, -3.15)
-        anchor.object3D.quaternion.identity()
-        anchor.object3D.scale.setScalar(1.4)
-        setVisible(anchor, true)
+        activate({ replay: page2Runtime.replayArmed })
+        placeDebugAnchor()
         detectDepthDirection()
         overview.showFinal()
+        floorBase.showFinal()
         backgroundRoot.object3D.rotation.x = THREE.MathUtils.degToRad(config.background.endRotationX)
         setVisible(backgroundRoot, true)
         setState(PAGE2_STATES.OVERVIEW)
@@ -1054,6 +1141,9 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       resumeState = stateBeforeSuspension
       suspended = true
       tracked = false
+      page2Runtime.targetVisible = false
+      page2Runtime.replayArmed = true
+      page2Runtime.entranceRunId += 1
       stable.setTracked(false)
       setVisible(anchor, false)
       root.querySelector('.page1-ar')?.classList.remove('is-page2-active')
@@ -1066,19 +1156,23 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     },
     resumeAfterSuspension() {
       resumeState = stateBeforeSuspension
-      activate({ resumed: true })
+      activate({ replay: page2Runtime.replayArmed })
     },
-    getState: () => ({ state, tracked, suspended, resumeState, fps }),
+    getState: () => ({ state, tracked, suspended, resumeState, fps, ...page2Runtime }),
     destroy() {
       destroyed = true
       abortController.abort()
-      window.clearTimeout(assetLoadingStatusTimer)
+      unsubscribePreload()
+      window.clearTimeout(replayGuideTimer)
       assetLoadingPromise = null
+      bindingPromises.clear()
+      bindingQueue.splice(0)
       pendingAnimationFrames.forEach((id) => cancelAnimationFrame(id))
       pendingAnimationFrames.clear()
       lifecycle?.destroy()
       stable.destroy()
       overview.destroy()
+      floorBase.destroy()
       model.destroy()
       particles.destroy()
       if (scene.__page2RuntimeTick === update) scene.__page2RuntimeTick = null
