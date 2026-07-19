@@ -69,9 +69,11 @@ export function createPage2Model({
   let celebrationElapsed = -1
   let selectedScreenPoint = null
   let hotspotPulseElapsed = 0
-  let depthDirection = 1
-  let cardDistance = 0
-  let backgroundDistance = Infinity
+  let depthDirection = -1
+  let bottomHeight = 0
+  let rearDepthMm = 0
+  let frontDepthMm = 0
+  let widthSpan = 0
   let backgroundPlanePosition = null
 
   const setModelOpacity = (opacity) => {
@@ -113,19 +115,16 @@ export function createPage2Model({
   const updateLayoutPositions = () => {
     if (!layoutReady) return
     const halfDepth = modelLocalSize.z * baseScale * 0.5
-    const minimumCenterHeight = config.model.cardClearance + halfDepth
-    const configuredHeight = Math.abs(config.model.finalPosition.z)
     finalPosition.set(
       0,
-      config.model.finalPosition.y,
-      depthDirection * Math.max(minimumCenterHeight, configuredHeight),
+      config.markerAspect / 2 - config.model.centerDepthUnit,
+      config.model.bottomClearanceUnit + halfDepth,
     )
     entrancePosition.set(
-      finalPosition.x + config.model.entranceOffset.x,
-      finalPosition.y + config.model.entranceOffset.y,
-      finalPosition.z + config.model.entranceOffset.z * depthDirection,
+      finalPosition.x,
+      finalPosition.y,
+      Math.max(0.005, finalPosition.z - config.model.entranceRiseUnit),
     )
-    cardDistance = Math.max(0, Math.abs(finalPosition.z) - halfDepth)
     particleRoot.object3D.position.copy(finalPosition)
   }
 
@@ -141,8 +140,8 @@ export function createPage2Model({
     )
     transform.object3D.rotation.set(
       THREE.MathUtils.degToRad(lerp(fromRotation.x, toRotation.x + pitch, progress)),
-      THREE.MathUtils.degToRad(lerp(fromRotation.y, toRotation.y + yaw, progress)),
-      THREE.MathUtils.degToRad(lerp(fromRotation.z, toRotation.z, progress)),
+      THREE.MathUtils.degToRad(lerp(fromRotation.y, toRotation.y, progress)),
+      THREE.MathUtils.degToRad(lerp(fromRotation.z, toRotation.z + yaw, progress)),
     )
     transform.object3D.scale.setScalar(scaled)
   }
@@ -157,38 +156,54 @@ export function createPage2Model({
     return points
   }
 
-  const measureBackgroundClearance = () => {
-    if (!modelObject || !backgroundPlane || !scene.camera) return Infinity
+  const measureCardBounds = () => {
+    if (!modelObject) return null
     anchor.object3D.updateWorldMatrix(true, true)
-    backgroundPlane.object3D.updateWorldMatrix(true, false)
     transform.object3D.updateWorldMatrix(true, true)
     worldBounds.setFromObject(modelObject)
-    const planePoint = new THREE.Vector3()
-    const planeQuaternion = new THREE.Quaternion()
-    const planeNormal = new THREE.Vector3(0, 0, 1)
-    backgroundPlane.object3D.getWorldPosition(planePoint)
-    backgroundPlane.object3D.getWorldQuaternion(planeQuaternion)
-    planeNormal.applyQuaternion(planeQuaternion).normalize()
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, planePoint)
-    const cameraWorld = new THREE.Vector3()
-    scene.camera.getWorldPosition(cameraWorld)
-    const cameraSide = Math.sign(plane.distanceToPoint(cameraWorld)) || 1
-    backgroundPlanePosition = anchor.object3D.worldToLocal(planePoint.clone()).toArray()
-    return Math.min(...boxCorners(worldBounds).map((point) => plane.distanceToPoint(point) * cameraSide))
+    const localBounds = new THREE.Box3().makeEmpty()
+    boxCorners(worldBounds).forEach((point) => localBounds.expandByPoint(anchor.object3D.worldToLocal(point)))
+    const rearEdgeY = config.markerAspect / 2
+    bottomHeight = localBounds.min.z
+    rearDepthMm = (rearEdgeY - localBounds.max.y) * config.spatial.markerWidthMm
+    frontDepthMm = (rearEdgeY - localBounds.min.y) * config.spatial.markerWidthMm
+    widthSpan = localBounds.max.x - localBounds.min.x
+    if (backgroundPlane?.object3D) {
+      const planePoint = new THREE.Vector3()
+      backgroundPlane.object3D.getWorldPosition(planePoint)
+      backgroundPlanePosition = anchor.object3D.worldToLocal(planePoint).toArray()
+    }
+    return localBounds
   }
 
-  const ensureBackgroundClearance = () => {
+  const ensureSafeCardBounds = () => {
     if (!layoutReady) return
     userScale = clamp(userScale, config.model.minScale, config.model.maxScale)
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       applyTransform(1)
       transform.object3D.updateWorldMatrix(true, true)
-      backgroundDistance = measureBackgroundClearance()
-      if (!Number.isFinite(backgroundDistance) || backgroundDistance >= config.model.backgroundClearance) break
-      finalPosition.z += depthDirection * (config.model.backgroundClearance - backgroundDistance + 0.012)
-      entrancePosition.z += depthDirection * (config.model.backgroundClearance - backgroundDistance + 0.012)
+      const bounds = measureCardBounds()
+      if (!bounds) break
+      const allowedWidth = 0.9
+      const allowedDepth = config.model.frontLimitUnit - config.model.backLimitUnit
+      const currentWidth = bounds.max.x - bounds.min.x
+      const currentDepth = bounds.max.y - bounds.min.y
+      const fit = Math.min(1, allowedWidth / Math.max(currentWidth, 0.0001), allowedDepth / Math.max(currentDepth, 0.0001))
+      if (fit < 0.999) {
+        userScale = Math.max(config.model.minScale, userScale * fit * 0.985)
+        continue
+      }
+      const heightShift = config.model.bottomClearanceUnit - bounds.min.z
+      if (Math.abs(heightShift) > 0.0005) {
+        finalPosition.z += heightShift
+        entrancePosition.z = Math.max(0.005, finalPosition.z - config.model.entranceRiseUnit)
+        continue
+      }
+      break
     }
     applyTransform(1)
+    measureCardBounds()
+    particleRoot.object3D.position.copy(finalPosition)
   }
 
   const updateDebugBounds = () => {
@@ -196,7 +211,7 @@ export function createPage2Model({
     if (!debugBoxHelper.visible) return
     transform.object3D.updateWorldMatrix(true, true)
     debugBounds.setFromObject(modelObject)
-    backgroundDistance = measureBackgroundClearance()
+    measureCardBounds()
   }
 
   const updateHotspotAppearance = () => {
@@ -265,7 +280,7 @@ export function createPage2Model({
     userScale = 1
     yaw = 0
     pitch = 0
-    ensureBackgroundClearance()
+    ensureSafeCardBounds()
     setVisible(modelRoot, true)
     setVisible(hotspotRoot, false)
     setModelOpacity(0)
@@ -280,7 +295,7 @@ export function createPage2Model({
     selectedHotspotId = null
     selectedScreenPoint = null
     updateLayoutPositions()
-    ensureBackgroundClearance()
+    ensureSafeCardBounds()
     setModelOpacity(1)
     applyTransform(1)
     updateHotspotAppearance()
@@ -389,7 +404,7 @@ export function createPage2Model({
     }
     if (activePointers.size < 2) {
       pinchStartDistance = 0
-      if (loaded && modelRoot.object3D.visible) ensureBackgroundClearance()
+      if (loaded && modelRoot.object3D.visible) ensureSafeCardBounds()
     }
   }
 
@@ -423,8 +438,18 @@ export function createPage2Model({
     worldBoundsMin: worldBounds.min.toArray(),
     worldBoundsMax: worldBounds.max.toArray(),
     finalPosition: finalPosition.toArray(),
-    cardDistance,
-    backgroundDistance,
+    modelCenterDepthMm: config.model.centerDepthMm,
+    bottomHeightUnit: bottomHeight,
+    bottomHeightMm: bottomHeight * config.spatial.markerWidthMm,
+    rearDepthMm,
+    frontDepthMm,
+    widthSpan,
+    safety: {
+      bottomClearanceMm: config.model.bottomClearanceMm,
+      backLimitMm: config.model.backLimitMm,
+      frontLimitMm: config.model.frontLimitMm,
+      widthLimitUnit: 0.9,
+    },
     backgroundPlanePosition,
     selectedHotspotId,
     hotspots: hotspots.map((item) => ({ id: item.id, position: { ...item.position } })),
@@ -458,7 +483,7 @@ export function createPage2Model({
           entranceActive = false
           setModelOpacity(1)
           setVisible(hotspotRoot, true)
-          ensureBackgroundClearance()
+          ensureSafeCardBounds()
           onEntranceComplete?.()
         }
       } else if (loaded && modelRoot.object3D.visible) {
@@ -508,7 +533,7 @@ export function createPage2Model({
     show() {
       setVisible(modelRoot, true)
       if (loaded && !entranceActive) {
-        ensureBackgroundClearance()
+        ensureSafeCardBounds()
         setModelOpacity(1)
         setVisible(hotspotRoot, true)
       }

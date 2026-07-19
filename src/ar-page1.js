@@ -90,21 +90,20 @@ export function renderArPage1(root) {
 
   root.innerHTML = `
     <main class="page1-preview page1-ar" style="--color-mask-url: url('${config.assets.colorMask}')">
-      <div class="page2-preload-assets" hidden>${page2AssetsMarkup(PAGE2_CONFIG)}</div>
+      <div class="ar-runtime-assets" hidden>
+        <img id="marker-reference" src="${config.ar.markerImage}" alt="" draggable="false" />
+        <img id="craft-panel-asset" src="${config.assets.backgroundBoard}" alt="" draggable="false" />
+        <img id="badge-bamboo" src="${config.assets.badge}" alt="" draggable="false" />
+        ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
+        <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="none"></video>
+        <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
+        <div class="page2-preload-assets">${page2AssetsMarkup(PAGE2_CONFIG)}</div>
+      </div>
       <a-scene id="page1-ar-scene" class="preview-scene ar-scene" embedded
         mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no"
         renderer="antialias: true; colorManagement: true; alpha: true"
         vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false"
         loading-screen="enabled: false">
-        <a-assets timeout="8000">
-          <img id="marker-reference" src="${config.ar.markerImage}" alt="" draggable="false" />
-          <img id="craft-panel-asset" src="${config.assets.backgroundBoard}" alt="" draggable="false" />
-          <img id="badge-bamboo" src="${config.assets.badge}" alt="" draggable="false" />
-          ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
-          <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="metadata"></video>
-          <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
-        </a-assets>
-
         <a-camera position="0 0 0" camera="near: 0.01; far: 1000" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
         <a-entity id="page1-target" mindar-image-target="targetIndex: ${config.ar.targetIndex}">
           <a-plane id="marker-touch-plane" width="1" height="${aspect}" position="0 0 0.004"
@@ -235,6 +234,7 @@ export function renderArPage1(root) {
   const markerPlane = root.querySelector('#marker-touch-plane')
   const hotspotVisual = root.querySelector('#marker-hotspot-visual')
   const markerReference = root.querySelector('#marker-reference')
+  const startActionButton = root.querySelector('[data-ar-action="start"]')
   let arState = AR_PAGE1_STATES.AR_NOT_STARTED
   let resumeArState = AR_PAGE1_STATES.AR_NOT_STARTED
   let arReady = false
@@ -245,6 +245,9 @@ export function renderArPage1(root) {
   let stableAnchorController = null
   let lifecycle = null
   let page2Controller = null
+  let cameraStartRequested = false
+  let cameraStartPromise = null
+  let cameraStarted = false
   let markerAspect = aspect
   let bambooClicked = false
   let displayMode = null
@@ -259,6 +262,17 @@ export function renderArPage1(root) {
       initialPanelMode.endRotation.y,
       initialPanelMode.endRotation.z,
     ],
+  }
+
+  if (!scene.hasLoaded && startActionButton) {
+    startActionButton.disabled = true
+    startActionButton.textContent = '正在准备AR…'
+    scene.addEventListener('loaded', () => {
+      if (!cameraStartRequested) {
+        startActionButton.disabled = false
+        startActionButton.textContent = '开启AR体验'
+      }
+    }, { once: true, signal })
   }
 
   const setArState = (nextState) => {
@@ -753,18 +767,47 @@ export function renderArPage1(root) {
     updatePanelDebug()
   }
 
-  const startAr = async (restart = false) => {
-    setArState(AR_PAGE1_STATES.AR_STARTING)
-    ui.showStarting()
-    try {
+  const waitForCameraFrame = async (system) => {
+    const video = system?.video || scene.querySelector('video[autoplay]') || [...document.querySelectorAll('video')]
+      .find((element) => element.id !== 'dragon-video' && element.srcObject)
+    if (video && video.readyState < 2) {
+      await Promise.race([
+        new Promise((resolve) => video.addEventListener('playing', resolve, { once: true })),
+        new Promise((resolve) => window.setTimeout(resolve, 1200)),
+      ])
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  }
+
+  const requestCameraStart = () => {
+    if (cameraStarted) return Promise.resolve()
+    if (cameraStartPromise) return cameraStartPromise
+    cameraStartRequested = true
+    cameraStartPromise = (async () => {
       if (!scene.hasLoaded) {
         await new Promise((resolve) => scene.addEventListener('loaded', resolve, { once: true }))
       }
-      setupArControllers()
       const system = scene.systems['mindar-image-system']
       if (!system?.start) throw new Error('MindAR系统未加载')
-      if (restart) await system.stop?.()
       await system.start()
+      cameraStarted = true
+      await waitForCameraFrame(system)
+      setupArControllers()
+      page2Controller?.startAssetLoading()
+    })().catch((error) => {
+      cameraStartRequested = false
+      cameraStartPromise = null
+      cameraStarted = false
+      throw error
+    })
+    return cameraStartPromise
+  }
+
+  const startAr = async () => {
+    setArState(AR_PAGE1_STATES.AR_STARTING)
+    ui.showStarting()
+    try {
+      await requestCameraStart()
       setArState(AR_PAGE1_STATES.AR_SCANNING)
       ui.showScanning()
     } catch (error) {
@@ -801,9 +844,10 @@ export function renderArPage1(root) {
   }
   updateStorageDebug()
   updateModeDebug()
-  if (scene.hasLoaded) setupArControllers()
-  else scene.addEventListener('loaded', setupArControllers, { once: true, signal })
-
+  if (page2Debug) {
+    if (scene.hasLoaded) setupArControllers()
+    else scene.addEventListener('loaded', setupArControllers, { once: true, signal })
+  }
   root.__page1Cleanup = () => {
     abortController.abort()
     hotspot?.destroy()
@@ -812,6 +856,9 @@ export function renderArPage1(root) {
     lifecycle?.destroy()
     page2Controller?.destroy()
     pageCleanup()
-    scene.systems['mindar-image-system']?.stop?.()
+    if (cameraStartRequested || cameraStarted) scene.systems['mindar-image-system']?.stop?.()
+    cameraStartPromise = null
+    cameraStartRequested = false
+    cameraStarted = false
   }
 }

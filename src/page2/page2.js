@@ -38,18 +38,15 @@ const assetEntries = [
 ]
 
 const image = (id, key, config) =>
-  `<img id="${id}" src="${config.assets[key]}" alt="" draggable="false" crossorigin="anonymous" />`
+  `<img id="${id}" data-page2-src="${config.assets[key]}" alt="" draggable="false" crossorigin="anonymous" />`
 
 export const page2AssetsMarkup = (config) => `
   ${assetEntries.map(([id, key]) => image(id, key, config)).join('')}
 `
 
-const fullLayer = (assetId, layer) => `
-  <a-image data-page2-layer="${layer}" src="#${assetId}" width="${PAGE2_CONFIG.background.width}" height="${PAGE2_CONFIG.background.height}" position="0 0 0"
+const fullLayer = (assetId, layer, assetKey) => `
+  <a-image data-page2-layer="${layer}" data-page2-asset-key="${assetKey}" src="#${assetId}" width="${PAGE2_CONFIG.background.width}" height="${PAGE2_CONFIG.background.height}" position="0 0 0"
     material="shader: flat; transparent: true; alphaTest: 0.005; depthWrite: false; depthTest: true; side: double"></a-image>`
-
-const normalizedPosition = (config, x, y, z) =>
-  `${(x - 0.5) * config.background.width} ${(0.5 - y) * config.background.height} ${z}`
 
 const hotspotMarkup = (hotspot, config, debug) => `
   <a-entity data-page2-hotspot="${hotspot.id}" position="${hotspot.position.x} ${hotspot.position.y} ${hotspot.position.z}">
@@ -63,17 +60,10 @@ const hotspotMarkup = (hotspot, config, debug) => `
 
 export function page2SceneMarkup(config, debug = false) {
   const { width, height } = config.background
-  const ringPosition = normalizedPosition(config, config.mainVisual.ringCenterX, config.mainVisual.ringCenterY, 0)
-  const pearlPosition = normalizedPosition(config, config.mainVisual.pearlCenterX, config.mainVisual.pearlCenterY, 0)
-  const mapPointPosition = normalizedPosition(
-    config,
-    config.map.tongliangX + config.map.tongliangOffsetX,
-    config.map.tongliangY + config.map.tongliangOffsetY,
-    0,
-  )
-  const fire = config.fireEntryHotspot
-  const hitPosition = normalizedPosition(config, fire.x, fire.y, 0)
   const hinge = config.background.hingePosition
+  const rearY = config.markerAspect / 2
+  const spatialLine = (id, depthUnit, color) => `<a-box id="${id}" visible="${debug}" width="1" height=".006" depth=".004"
+    position="0 ${rearY - depthUnit} .004" material="shader: flat; color: ${color}; transparent: true; opacity: .86; depthWrite: false"></a-box>`
   return `
     <a-entity id="page2-target" mindar-image-target="targetIndex: ${config.targetIndex}">
       <a-plane id="page2-marker-plane" width="1" height="${config.markerAspect}" position="0 0 .003"
@@ -87,68 +77,70 @@ export function page2SceneMarkup(config, debug = false) {
             material="shader: flat; transparent: true; alphaTest: .005; depthWrite: true; depthTest: true; side: double"></a-image>
           <a-plane id="page2-dark-overlay" width="${width}" height="${height}" position="0 0 .001"
             material="shader: flat; color: #120804; transparent: true; opacity: 0; depthWrite: false; side: double"></a-plane>
-
-          <a-entity id="page2-overview-root" visible="false" position="0 0 0">
-            <a-entity id="page2-title-root">${fullLayer('page2-title-asset', 'title')}</a-entity>
-            <a-entity id="page2-intro-root">
-              ${fullLayer('page2-intro-dragon-asset', 'intro-line')}
-              ${fullLayer('page2-intro-text-asset', 'intro-text')}
-            </a-entity>
-            <a-entity id="page2-map-root">
-              ${fullLayer('page2-map-main-asset', 'map-main')}
-              ${fullLayer('page2-map-text-asset', 'map-text')}
-              <a-image id="page2-map-tongliang" src="#page2-map-tongliang-asset" position="${mapPointPosition}"
-                width="${config.map.tongliangWidth}" height="${config.map.tongliangHeight}"
-                material="shader: flat; transparent: true; depthWrite: false"></a-image>
-              <a-ring id="page2-map-tongliang-pulse" position="${mapPointPosition}" radius-inner=".008" radius-outer=".011"
-                material="shader: flat; color: #ffb745; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
-            </a-entity>
-            <a-entity id="page2-main-visual-root">
-              ${fullLayer('page2-main-base-asset', 'main-base')}
-              <a-image id="page2-main-ring" src="#page2-main-ring-asset" position="${ringPosition}"
-                width="${config.mainVisual.ringWidth}" height="${config.mainVisual.ringHeight}"
-                material="shader: flat; transparent: true; alphaTest: .005; depthWrite: false"></a-image>
-              ${fullLayer('page2-main-scene-asset', 'main-scene')}
-              ${fullLayer('page2-main-sparks-asset', 'main-sparks')}
-              ${fullLayer('page2-main-performers-asset', 'main-performers')}
-              ${fullLayer('page2-main-dancers-asset', 'main-dancers')}
-              ${fullLayer('page2-main-dragon-asset', 'main-dragon')}
-              <a-image id="page2-main-pearl" src="#page2-main-pearl-asset" position="${pearlPosition}"
-                width="${config.mainVisual.pearlWidth}" height="${config.mainVisual.pearlHeight}"
-                material="shader: flat; transparent: true; alphaTest: .005; depthWrite: false"></a-image>
-            </a-entity>
-            <a-entity id="page2-types-root">
-              ${fullLayer('page2-types-title-asset', 'types-title')}
-              ${fullLayer('page2-types-back-asset', 'types-back')}
-              ${fullLayer('page2-types-mid-asset', 'types-mid')}
-              ${fullLayer('page2-types-front-asset', 'types-front')}
-            </a-entity>
-            <a-entity id="page2-timeline-root">
-              ${fullLayer('page2-timeline-base-asset', 'timeline-base')}
-              ${fullLayer('page2-timeline-nodes-asset', 'timeline-nodes')}
-              ${fullLayer('page2-timeline-texts-asset', 'timeline-texts')}
-            </a-entity>
-            <a-plane id="page2-fire-entry-hit" position="${hitPosition}"
-              width="${width * fire.width}" height="${height * fire.height}"
-              material="shader: flat; transparent: true; opacity: .001; depthWrite: false; side: double"></a-plane>
-            <a-ring id="page2-entry-ripple" position="${hitPosition}" radius-inner=".02" radius-outer=".025" visible="false"
-              material="shader: flat; color: #ff9d31; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
-          </a-entity>
-
-          <a-plane id="page2-debug-overview-boundary" visible="${debug}" width="${width}" height="${height}" position="0 0 .05"
-            material="shader: flat; wireframe: true; color: #54e5ff; transparent: true; opacity: .75; depthWrite: false"></a-plane>
-          <a-entity id="page2-debug-ring-center" visible="${debug}" position="${ringPosition}">
-            <a-plane width=".08" height=".002" material="shader: flat; color: #42ff93; depthWrite: false"></a-plane>
-            <a-plane width=".002" height=".08" material="shader: flat; color: #42ff93; depthWrite: false"></a-plane>
-          </a-entity>
-          <a-plane id="page2-debug-fire-hotspot" visible="${debug}" position="${hitPosition}"
-            width="${width * fire.width}" height="${height * fire.height}"
-            material="shader: flat; wireframe: true; color: #ff583d; transparent: true; opacity: .9; depthWrite: false"></a-plane>
-          <a-entity id="page2-debug-tongliang-center" visible="${debug}" position="${mapPointPosition}">
-            <a-plane width=".045" height=".0015" material="shader: flat; color: #ffdd55; depthWrite: false"></a-plane>
-            <a-plane width=".0015" height=".045" material="shader: flat; color: #ffdd55; depthWrite: false"></a-plane>
-          </a-entity>
         </a-entity>
+      </a-entity>
+      <a-entity id="page2-overview-root" data-page2-overview-depth-root visible="false">
+        <a-entity id="page2-title-root">${fullLayer('page2-title-asset', 'title', 'title')}</a-entity>
+        <a-entity id="page2-intro-root">
+          ${fullLayer('page2-intro-dragon-asset', 'intro-line', 'introDragon')}
+          ${fullLayer('page2-intro-text-asset', 'intro-text', 'introText')}
+        </a-entity>
+        <a-entity id="page2-map-root">
+          ${fullLayer('page2-map-main-asset', 'map-main', 'mapMain')}
+          ${fullLayer('page2-map-text-asset', 'map-text', 'mapText')}
+          <a-image id="page2-map-tongliang" data-page2-layer="map-tongliang" data-page2-asset-key="mapTongliang" src="#page2-map-tongliang-asset"
+            width="${config.map.tongliangWidth}" height="${config.map.tongliangHeight}"
+            material="shader: flat; transparent: true; depthWrite: false"></a-image>
+          <a-ring id="page2-map-tongliang-pulse" radius-inner=".008" radius-outer=".011"
+            material="shader: flat; color: #ffb745; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
+        </a-entity>
+        <a-entity id="page2-main-visual-root">
+          ${fullLayer('page2-main-base-asset', 'main-base', 'mainBase')}
+          <a-image id="page2-main-ring" data-page2-layer="main-ring" data-page2-asset-key="mainRing" src="#page2-main-ring-asset"
+            width="${config.mainVisual.ringWidth}" height="${config.mainVisual.ringHeight}"
+            material="shader: flat; transparent: true; alphaTest: .005; depthWrite: false"></a-image>
+          ${fullLayer('page2-main-scene-asset', 'main-scene', 'mainScene')}
+          ${fullLayer('page2-main-sparks-asset', 'main-sparks', 'mainSparks')}
+          ${fullLayer('page2-main-performers-asset', 'main-performers', 'mainPerformers')}
+          ${fullLayer('page2-main-dancers-asset', 'main-dancers', 'mainDancers')}
+          ${fullLayer('page2-main-dragon-asset', 'main-dragon', 'mainDragon')}
+          <a-image id="page2-main-pearl" data-page2-layer="main-pearl" data-page2-asset-key="mainPearl" src="#page2-main-pearl-asset"
+            width="${config.mainVisual.pearlWidth}" height="${config.mainVisual.pearlHeight}"
+            material="shader: flat; transparent: true; alphaTest: .005; depthWrite: false"></a-image>
+        </a-entity>
+        <a-entity id="page2-types-root">
+          ${fullLayer('page2-types-title-asset', 'types-title', 'typesTitle')}
+          ${fullLayer('page2-types-back-asset', 'types-back', 'typesBack')}
+          ${fullLayer('page2-types-mid-asset', 'types-mid', 'typesMid')}
+          ${fullLayer('page2-types-front-asset', 'types-front', 'typesFront')}
+        </a-entity>
+        <a-entity id="page2-timeline-root">
+          ${fullLayer('page2-timeline-base-asset', 'timeline-base', 'timelineBase')}
+          ${fullLayer('page2-timeline-nodes-asset', 'timeline-nodes', 'timelineNodes')}
+          ${fullLayer('page2-timeline-texts-asset', 'timeline-texts', 'timelineTexts')}
+        </a-entity>
+        <a-plane id="page2-fire-entry-hit" width="${width * fire.width}" height="${height * fire.height}"
+          material="shader: flat; transparent: true; opacity: .001; depthWrite: false; side: double"></a-plane>
+        <a-ring id="page2-entry-ripple" radius-inner=".02" radius-outer=".025" visible="false"
+          material="shader: flat; color: #ff9d31; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
+        <a-entity id="page2-debug-ring-center" visible="${debug}">
+          <a-plane width=".08" height=".002" material="shader: flat; color: #42ff93; depthWrite: false"></a-plane>
+          <a-plane width=".002" height=".08" material="shader: flat; color: #42ff93; depthWrite: false"></a-plane>
+        </a-entity>
+        <a-plane id="page2-debug-fire-hotspot" visible="${debug}" width="${width * fire.width}" height="${height * fire.height}"
+          material="shader: flat; wireframe: true; color: #ff583d; transparent: true; opacity: .9; depthWrite: false"></a-plane>
+        <a-entity id="page2-debug-tongliang-center" visible="${debug}">
+          <a-plane width=".045" height=".0015" material="shader: flat; color: #ffdd55; depthWrite: false"></a-plane>
+          <a-plane width=".0015" height=".045" material="shader: flat; color: #ffdd55; depthWrite: false"></a-plane>
+        </a-entity>
+        ${config.layers.map((layer) => `<a-text data-page2-debug-layer="${layer.key}" visible="${debug}" value="${layer.layerIndex + 1} ${layer.depthMm.toFixed(1)}mm" align="left" color="#63efff" width=".42"></a-text>`).join('')}
+      </a-entity>
+      <a-entity id="page2-spatial-debug" visible="${debug}">
+        ${spatialLine('page2-debug-rear-edge', 0, '#ffde55')}
+        ${spatialLine('page2-debug-back-safety', config.spatial.backSafetyUnit, '#5eff97')}
+        ${spatialLine('page2-debug-front-limit', config.spatial.frontLimitUnit, '#ff8d4a')}
+        ${spatialLine('page2-debug-card-front', config.spatial.cardDepthUnit, '#ff4d67')}
+        ${spatialLine('page2-debug-card-center', config.model.centerDepthUnit, '#61a5ff')}
       </a-entity>
       <a-entity id="page2-model-root" data-page2-model-stage visible="false" position="0 0 0">
         <a-entity id="page2-particle-root"></a-entity>
@@ -196,7 +188,8 @@ export const page2UiMarkup = (config, debug = false) => `
     <strong>Page 2 Debug</strong>
     <p>状态 <b data-page2-debug-state>${PAGE2_STATES.HIDDEN}</b></p>
     <p>targetIndex <b>${config.targetIndex}</b>｜FPS <b data-page2-debug-fps>0</b></p>
-    <p>overview assets <b data-page2-debug-assets>false</b>｜tracking stable <b data-page2-debug-stable>false</b></p>
+    <p>all assets <b data-page2-debug-assets>false</b>｜background <b data-page2-debug-background>false</b></p>
+    <p>overview textures <b data-page2-debug-textures>false</b>｜tracking stable <b data-page2-debug-stable>false</b></p>
     <p>entrance <b data-page2-debug-entrance>false</b>｜progress <b data-page2-debug-progress>0%</b></p>
     <p>overview ready <b data-page2-debug-overview>false</b>｜model loaded <b data-page2-debug-model>false</b></p>
     <p>depth direction <b data-page2-debug-depth>?</b></p>
@@ -239,7 +232,6 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   const { signal } = abortController
   const backgroundRoot = root.querySelector('#page2-background-root')
   const backgroundPlane = root.querySelector('#page2-background-plane')
-  const boardCenter = root.querySelector('#page2-board-center')
   const darkOverlay = root.querySelector('#page2-dark-overlay')
   const fireHit = root.querySelector('#page2-fire-entry-hit')
   const ripple = root.querySelector('#page2-entry-ripple')
@@ -271,6 +263,8 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   let fpsFrames = 0
   let fps = 0
   let page2AssetsReady = false
+  let page2BackgroundReady = false
+  let page2OverviewTexturesReady = false
   let page2TrackingStable = false
   let page2EntranceStarted = false
   let page2EntranceProgress = 0
@@ -278,9 +272,16 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   let page2ModelLoaded = false
   let entranceTimelineActive = false
   let entranceFramePending = false
-  let depthDirection = 1
+  let depthDirection = -1
   let destroyed = false
+  let assetLoadingPromise = null
+  let assetFallbackTimer = 0
+  const assetStatus = new Map(assetEntries.map(([, key]) => [key, 'deferred']))
   const pendingAnimationFrames = new Set()
+
+  const debugLog = (event, detail = '') => {
+    if (debug) console.info(`[page2] ${event}`, detail)
+  }
 
   const updateStateUi = () => {
     root.querySelector('[data-page2-debug-state]')?.replaceChildren(state)
@@ -288,6 +289,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   const setState = (next) => {
     if (state === next) return
     state = next
+    debugLog('page2State', next)
     updateStateUi()
   }
   const setHtmlVisible = (element, visible) => {
@@ -333,6 +335,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     isCardOpen: () => !infoCard.hidden,
     onReady() {
       page2ModelLoaded = true
+      debugLog('page2ModelLoaded', true)
       updateReadinessDebug()
       renderDebugOutput()
     },
@@ -374,6 +377,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       page2EntranceProgress = 1
       page2OverviewReady = true
       entranceTimelineActive = false
+      debugLog('page2EntranceCompleted', true)
       updateReadinessDebug()
       renderDebugOutput()
       setState(PAGE2_STATES.OVERVIEW)
@@ -405,27 +409,21 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
 
   const updateReadinessDebug = () => {
     root.querySelector('[data-page2-debug-assets]')?.replaceChildren(String(page2AssetsReady))
+    root.querySelector('[data-page2-debug-background]')?.replaceChildren(String(page2BackgroundReady))
+    root.querySelector('[data-page2-debug-textures]')?.replaceChildren(String(page2OverviewTexturesReady))
     root.querySelector('[data-page2-debug-stable]')?.replaceChildren(String(page2TrackingStable))
     root.querySelector('[data-page2-debug-entrance]')?.replaceChildren(String(page2EntranceStarted))
     root.querySelector('[data-page2-debug-progress]')?.replaceChildren(`${Math.round(page2EntranceProgress * 100)}%`)
     root.querySelector('[data-page2-debug-overview]')?.replaceChildren(String(page2OverviewReady))
     root.querySelector('[data-page2-debug-model]')?.replaceChildren(String(page2ModelLoaded))
-    root.querySelector('[data-page2-debug-depth]')?.replaceChildren(depthDirection > 0 ? '+Z' : '-Z')
+    root.querySelector('[data-page2-debug-depth]')?.replaceChildren('card front (-Y), up (+Z)')
   }
 
   const detectDepthDirection = () => {
-    const configured = config.overviewDepthDirection
-    if (configured === 1 || configured === -1) depthDirection = configured
-    else if (scene.camera && boardCenter?.object3D) {
-      const cameraPosition = new THREE.Vector3()
-      scene.camera.getWorldPosition(cameraPosition)
-      boardCenter.object3D.worldToLocal(cameraPosition)
-      depthDirection = cameraPosition.z < 0 ? -1 : 1
-    }
+    depthDirection = -1
     overview.setDepthDirection(depthDirection)
     model.setDepthDirection(depthDirection)
     updateReadinessDebug()
-    updateNormalizedDebug()
   }
 
   const afterTwoAnimationFrames = (callback) => {
@@ -441,7 +439,8 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   }
 
   const tryStartOverview = () => {
-    if (destroyed || !tracked || suspended || !page2AssetsReady || !page2TrackingStable || page2EntranceStarted || entranceFramePending) return
+    debugLog('page2EntranceRequested', { page2BackgroundReady, page2TrackingStable })
+    if (destroyed || !tracked || suspended || !page2BackgroundReady || !page2TrackingStable || page2EntranceStarted || entranceFramePending) return
     entranceFramePending = true
     page2EntranceStarted = true
     page2OverviewReady = false
@@ -463,42 +462,84 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       overview.resetEntry()
       overview.startEntry()
       entranceTimelineActive = true
+      debugLog('page2EntranceStarted', true)
       updateReadinessDebug()
     })
   }
 
-  const waitForImage = ([id, key]) => new Promise((resolve) => {
-    const element = root.querySelector(`#${id}`)
-    if (!element) {
-      showError(`第二页素材节点缺失：${config.assets[key]}`)
-      resolve(false)
-      return
-    }
-    if (element.complete) {
-      if (!element.naturalWidth) showError(`第二页素材加载失败：${config.assets[key]}`)
-      resolve(Boolean(element.naturalWidth))
-      return
-    }
-    element.addEventListener('load', () => resolve(true), { once: true, signal })
-    element.addEventListener('error', () => {
-      showError(`第二页素材加载失败：${config.assets[key]}`)
-      resolve(false)
-    }, { once: true, signal })
-  })
-
-  Promise.all(assetEntries.map(waitForImage)).then(() => {
-    if (destroyed) return
-    page2AssetsReady = true
+  const refreshAssetReadiness = () => {
+    const settled = [...assetStatus.values()].filter((status) => ['loaded', 'failed'].includes(status)).length
+    page2AssetsReady = settled === assetEntries.length
+    page2OverviewTexturesReady = assetEntries
+      .filter(([, key]) => key !== 'background')
+      .every(([, key]) => ['loaded', 'failed'].includes(assetStatus.get(key)))
+    if (page2OverviewTexturesReady) debugLog('page2OverviewTexturesReady', true)
     updateReadinessDebug()
-    tryStartOverview()
-  })
+    renderDebugOutput()
+  }
+
+  const settleAsset = (id, key, loaded) => {
+    if (destroyed || ['loaded', 'failed'].includes(assetStatus.get(key))) return
+    assetStatus.set(key, loaded ? 'loaded' : 'failed')
+    if (loaded) {
+      root.querySelectorAll(`[data-page2-asset-key="${key}"]`).forEach((entity) => entity.setAttribute('src', `#${id}`))
+      if (key === 'background') root.querySelector('#page2-background-plane')?.setAttribute('src', `#${id}`)
+      overview.markAssetReady(key)
+    } else {
+      console.error(`[page2] 第二页素材加载失败：${config.assets[key]}`)
+    }
+    if (key === 'background') {
+      page2BackgroundReady = true
+      debugLog('page2BackgroundReady', { loaded, path: config.assets[key] })
+      tryStartOverview()
+    }
+    refreshAssetReadiness()
+  }
+
+  const startAssetLoading = () => {
+    if (assetLoadingPromise || destroyed) return assetLoadingPromise
+    const loadTasks = assetEntries.map(([id, key]) => new Promise((resolve, reject) => {
+      const element = root.querySelector(`#${id}`)
+      if (!element) {
+        settleAsset(id, key, false)
+        reject(new Error(`Page2 image element missing: #${id}`))
+        return
+      }
+      assetStatus.set(key, 'loading')
+      element.addEventListener('load', () => {
+        settleAsset(id, key, true)
+        resolve({ key, path: element.dataset.page2Src })
+      }, { once: true, signal })
+      element.addEventListener('error', () => {
+        settleAsset(id, key, false)
+        reject(new Error(`Page2 image failed: ${element.dataset.page2Src}`))
+      }, { once: true, signal })
+      element.src = element.dataset.page2Src
+    }))
+    assetLoadingPromise = Promise.allSettled(loadTasks).then((results) => {
+      refreshAssetReadiness()
+      return results
+    })
+    assetFallbackTimer = window.setTimeout(() => {
+      if (!page2BackgroundReady) {
+        page2BackgroundReady = true
+        debugLog('page2BackgroundReady', '700ms fallback; background continues loading')
+        tryStartOverview()
+      }
+    }, 700)
+    refreshAssetReadiness()
+    if (page2BackgroundReady) tryStartOverview()
+    return assetLoadingPromise
+  }
 
   const activate = ({ resumed = false } = {}) => {
+    debugLog('targetFound', { resumed })
     suspended = false
     tracked = true
     root.querySelector('.page1-ar')?.classList.add('is-page2-active')
     onActivate?.()
     stable.setTracked(true)
+    startAssetLoading()
     model.preload()
     setHtmlVisible(lostNotice, false)
     if (resumed && resumeState !== PAGE2_STATES.HIDDEN) {
@@ -635,6 +676,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       else stableElapsed = 0
       if (!page2TrackingStable && stableElapsed >= config.overviewStableDelay) {
         page2TrackingStable = true
+        debugLog('page2TrackingStable', true)
         guideText.textContent = '视角已就绪'
         updateReadinessDebug()
         tryStartOverview()
@@ -669,33 +711,13 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   scene.setAttribute('page2-runtime', '')
 
   const updateNormalizedDebug = () => {
-    const ringPosition = normalizedPosition(
-      config,
-      config.mainVisual.ringCenterX,
-      config.mainVisual.ringCenterY,
-      depthDirection * config.mainVisual.depths.ring,
-    ).split(' ').map(Number)
-    root.querySelector('#page2-main-ring').object3D.position.set(...ringPosition)
-    root.querySelector('#page2-debug-ring-center').object3D.position.set(...ringPosition)
     const fire = config.fireEntryHotspot
-    const firePosition = normalizedPosition(config, fire.x, fire.y, depthDirection * (config.mainVisual.depths.dragon + 0.006)).split(' ').map(Number)
-    fireHit.object3D.position.set(...firePosition)
     fireHit.setAttribute('width', config.background.width * fire.width)
     fireHit.setAttribute('height', config.background.height * fire.height)
     const visual = root.querySelector('#page2-debug-fire-hotspot')
-    visual.object3D.position.set(...firePosition)
     visual.setAttribute('width', config.background.width * fire.width)
     visual.setAttribute('height', config.background.height * fire.height)
-    const mapPosition = normalizedPosition(
-      config,
-      config.map.tongliangX + config.map.tongliangOffsetX,
-      config.map.tongliangY + config.map.tongliangOffsetY,
-      depthDirection * config.map.depthTongliang,
-    ).split(' ').map(Number)
-    root.querySelector('#page2-map-tongliang').object3D.position.set(...mapPosition)
-    root.querySelector('#page2-map-tongliang-pulse').object3D.position.set(...mapPosition)
-    root.querySelector('#page2-debug-tongliang-center').object3D.position.set(...mapPosition)
-    root.querySelector('#page2-debug-overview-boundary').object3D.position.z = depthDirection * 0.11
+    overview.setDepthDirection(depthDirection)
   }
 
   const renderDebugOutput = () => {
@@ -713,6 +735,8 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       fireEntryHotspot: config.fireEntryHotspot,
       readiness: {
         page2AssetsReady,
+        page2BackgroundReady,
+        page2OverviewTexturesReady,
         page2TrackingStable,
         page2EntranceStarted,
         page2EntranceProgress,
@@ -720,25 +744,9 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
         page2ModelLoaded,
       },
       depthDirection,
-      depths: {
-        title: config.title.depth,
-        intro: {
-          dragonLine: config.intro.depthDragonLine,
-          text: config.intro.depthText,
-        },
-        map: {
-          main: config.map.depthMain,
-          text: config.map.depthText,
-          tongliang: config.map.depthTongliang,
-        },
-        mainVisual: config.mainVisual.depths,
-        types: config.types,
-        timeline: {
-          base: config.timeline.depthBase,
-          keyNodes: config.timeline.depthKeyNodes,
-          texts: config.timeline.depthTexts,
-        },
-      },
+      spatial: config.spatial,
+      layers: config.layers,
+      assets: Object.fromEntries(assetStatus),
       overview: overview.getDebugState(),
       model: model.getDebugState(),
     }, null, 2)
@@ -780,7 +788,6 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       anchor.object3D.scale.setScalar(1.4)
       setVisible(anchor, true)
       page2TrackingStable = true
-      page2AssetsReady = true
       page2EntranceStarted = false
       tryStartOverview()
     }, { signal })
@@ -813,29 +820,13 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     }
   }
 
-  assetEntries.forEach(([id, key]) => {
-    const element = root.querySelector(`#${id}`)
-    element?.addEventListener('error', () => showError(`第二页素材加载失败：${config.assets[key]}`), { once: true, signal })
-  })
-
-  const requiredPaths = [...new Set([config.markerImage, config.targets, ...Object.values(config.assets)])]
-  Promise.allSettled(requiredPaths.map(async (path) => {
-    const response = await fetch(path, { method: 'HEAD', cache: 'force-cache', signal })
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
-  })).then((results) => {
-    results.forEach((result, index) => {
-      if (result.status === 'rejected' && result.reason?.name !== 'AbortError') {
-        console.error(`[page2] 缺失或无法访问的资源：${requiredPaths[index]}`, result.reason)
-      }
-    })
-  })
-
   setVisible(backgroundRoot, false)
   setDarkness(0)
   updateStateUi()
   updateReadinessDebug()
 
   return {
+    startAssetLoading,
     suspendForOtherTarget() {
       if (!tracked && state === PAGE2_STATES.HIDDEN) return
       stateBeforeSuspension = state === PAGE2_STATES.TRACKING_LOST ? resumeState : state
@@ -860,6 +851,8 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     destroy() {
       destroyed = true
       abortController.abort()
+      window.clearTimeout(assetFallbackTimer)
+      assetLoadingPromise = null
       pendingAnimationFrames.forEach((id) => cancelAnimationFrame(id))
       pendingAnimationFrames.clear()
       lifecycle?.destroy()

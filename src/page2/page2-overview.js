@@ -2,21 +2,15 @@ const clamp01 = (value) => Math.min(1, Math.max(0, value))
 const easeOutCubic = (value) => 1 - Math.pow(1 - clamp01(value), 3)
 const easeInOutCubic = (value) => {
   const t = clamp01(value)
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+  return t < 0.5 ? 4 * t ** 3 : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
-const easeOutBack = (value) => {
-  const t = clamp01(value)
-  const c1 = 0.48
-  const c3 = c1 + 1
-  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
-}
-const interval = (elapsed, start, duration, easing = easeOutCubic) => easing((elapsed - start) / duration)
+const lerp = (from, to, progress) => from + (to - from) * progress
 
 const forEachMaterial = (entity, callback) => {
   entity?.object3D?.traverse((object) => {
     if (!object.material) return
     const materials = Array.isArray(object.material) ? object.material : [object.material]
-    materials.forEach(callback)
+    materials.forEach((material) => callback(material, object))
   })
 }
 
@@ -38,6 +32,7 @@ const setVisible = (entity, visible) => {
 }
 
 export function createPage2Overview({ root, config, onEntryComplete, onExitComplete, onRestoreComplete }) {
+  const THREE = window.AFRAME.THREE
   const overviewRoot = root.querySelector('#page2-overview-root')
   const groups = {
     title: root.querySelector('#page2-title-root'),
@@ -47,217 +42,240 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     types: root.querySelector('#page2-types-root'),
     timeline: root.querySelector('#page2-timeline-root'),
   }
-  const layers = {
-    title: root.querySelector('[data-page2-layer="title"]'),
-    introLine: root.querySelector('[data-page2-layer="intro-line"]'),
-    introText: root.querySelector('[data-page2-layer="intro-text"]'),
-    mapMain: root.querySelector('[data-page2-layer="map-main"]'),
-    mapText: root.querySelector('[data-page2-layer="map-text"]'),
-    mapTongliang: root.querySelector('#page2-map-tongliang'),
-    mapPulse: root.querySelector('#page2-map-tongliang-pulse'),
-    base: root.querySelector('[data-page2-layer="main-base"]'),
-    ring: root.querySelector('#page2-main-ring'),
-    scene: root.querySelector('[data-page2-layer="main-scene"]'),
-    sparks: root.querySelector('[data-page2-layer="main-sparks"]'),
-    performers: root.querySelector('[data-page2-layer="main-performers"]'),
-    dancers: root.querySelector('[data-page2-layer="main-dancers"]'),
-    dragon: root.querySelector('[data-page2-layer="main-dragon"]'),
-    pearl: root.querySelector('#page2-main-pearl'),
-    typesTitle: root.querySelector('[data-page2-layer="types-title"]'),
-    typesBack: root.querySelector('[data-page2-layer="types-back"]'),
-    typesMid: root.querySelector('[data-page2-layer="types-mid"]'),
-    typesFront: root.querySelector('[data-page2-layer="types-front"]'),
-    timelineBase: root.querySelector('[data-page2-layer="timeline-base"]'),
-    timelineNodes: root.querySelector('[data-page2-layer="timeline-nodes"]'),
-    timelineTexts: root.querySelector('[data-page2-layer="timeline-texts"]'),
-  }
+  const entities = new Map(config.layers.map((layer) => [layer.key, root.querySelector(`[data-page2-layer="${layer.key}"]`)]))
+  const layersByAsset = new Map()
+  entities.forEach((entity, key) => {
+    const assetKey = entity?.dataset.page2AssetKey
+    if (!assetKey) return
+    if (!layersByAsset.has(assetKey)) layersByAsset.set(assetKey, [])
+    layersByAsset.get(assetKey).push(key)
+  })
+  const mapPulse = root.querySelector('#page2-map-tongliang-pulse')
+  const fireHit = root.querySelector('#page2-fire-entry-hit')
+  const ripple = root.querySelector('#page2-entry-ripple')
+  const debugRing = root.querySelector('#page2-debug-ring-center')
+  const debugFire = root.querySelector('#page2-debug-fire-hotspot')
+  const debugTongliang = root.querySelector('#page2-debug-tongliang-center')
+  const readyAssets = new Set()
+  const readyAtElapsed = new Map()
+  const lateReveals = new Map()
+  const finalPoses = new Map()
+  const entryStartPoses = new Map()
+  const angle = THREE.MathUtils.degToRad(config.background.openAngle)
+  const cosAngle = Math.cos(angle)
+  const sinAngle = Math.sin(angle)
+  const rearEdgeY = config.markerAspect / 2
+  const verticalCenterZ = (config.background.height / 2) * sinAngle
+  const initialDepthUnit = (config.overview.initialDepthMm / config.spatial.markerWidthMm) * config.spatial.depthScale
   let mode = 'hidden'
   let elapsed = 0
   let continuousElapsed = 0
-  let depthDirection = 1
 
-  const depth = (value) => value * depthDirection
-  const resetGroupTransform = (entity) => {
-    entity.object3D.position.set(0, 0, 0)
-    entity.object3D.scale.setScalar(1)
-  }
-  const setLayerPose = (entity, { x = 0, y = 0, z = entity.object3D.position.z, scale = 1, opacity = 1 }) => {
-    entity.object3D.position.set(x, y, z)
-    entity.object3D.scale.setScalar(scale)
-    setOpacity(entity, opacity)
-  }
-  const setGroupPose = (entity, { x = 0, y = 0, z = 0, scale = 1, opacity = 1 }) => {
-    entity.object3D.position.set(x, y, z)
-    entity.object3D.scale.setScalar(scale)
-    setOpacity(entity, opacity)
-  }
+  const layerConfig = (key) => config.layers.find((layer) => layer.key === key)
+  const rotatedPoint = (depthUnit, localX = 0, localY = 0) => new THREE.Vector3(
+    localX,
+    rearEdgeY - depthUnit + localY * cosAngle,
+    verticalCenterZ + localY * sinAngle,
+  )
 
-  const applyDepths = () => {
-    layers.title.object3D.position.z = depth(config.title.depth)
-    layers.introLine.object3D.position.z = depth(config.intro.depthDragonLine)
-    layers.introText.object3D.position.z = depth(config.intro.depthText)
-    layers.mapMain.object3D.position.z = depth(config.map.depthMain)
-    layers.mapText.object3D.position.z = depth(config.map.depthText)
-    layers.mapTongliang.object3D.position.z = depth(config.map.depthTongliang)
-    layers.mapPulse.object3D.position.z = depth(config.map.depthTongliang + 0.001)
-    Object.entries(config.mainVisual.depths).forEach(([key, value]) => {
-      layers[key].object3D.position.z = depth(value)
-    })
-    layers.typesTitle.object3D.position.z = depth(config.types.depthTitle)
-    layers.typesBack.object3D.position.z = depth(config.types.row1.depth)
-    layers.typesMid.object3D.position.z = depth(config.types.row2.depth)
-    layers.typesFront.object3D.position.z = depth(config.types.row3.depth)
-    layers.timelineBase.object3D.position.z = depth(config.timeline.depthBase)
-    layers.timelineNodes.object3D.position.z = depth(config.timeline.depthKeyNodes)
-    layers.timelineTexts.object3D.position.z = depth(config.timeline.depthTexts)
-  }
-
-  const setTimelineReveal = (progress) => {
-    const p = Math.max(0.001, clamp01(progress))
-    const plane = layers.timelineBase
-    plane.object3D.scale.x = p
-    plane.object3D.position.x = -config.background.width * 0.5 + config.background.width * p * 0.5
-    const mesh = plane.getObject3D('mesh')
-    if (mesh?.material?.map) {
-      mesh.material.map.repeat.x = p
-      mesh.material.map.needsUpdate = true
+  const localPointForLayer = (key) => {
+    if (key === 'main-ring') return {
+      x: (config.mainVisual.ringCenterX - 0.5) * config.background.width,
+      y: (0.5 - config.mainVisual.ringCenterY) * config.background.height,
     }
+    if (key === 'main-pearl') return {
+      x: (config.mainVisual.pearlCenterX - 0.5) * config.background.width,
+      y: (0.5 - config.mainVisual.pearlCenterY) * config.background.height,
+    }
+    if (key === 'map-tongliang') return {
+      x: (config.map.tongliangX + config.map.tongliangOffsetX - 0.5) * config.background.width,
+      y: (0.5 - config.map.tongliangY - config.map.tongliangOffsetY) * config.background.height,
+    }
+    return { x: 0, y: 0 }
   }
 
-  const applyFinal = () => {
-    Object.values(groups).forEach(resetGroupTransform)
-    applyDepths()
-    Object.values(layers).forEach((entity) => setOpacity(entity, 1))
-    layers.typesBack.object3D.position.y = config.types.row1.offsetY
-    layers.typesBack.object3D.scale.setScalar(config.types.row1.scale)
-    layers.typesMid.object3D.position.y = config.types.row2.offsetY
-    layers.typesMid.object3D.scale.setScalar(config.types.row2.scale)
-    layers.typesFront.object3D.position.y = config.types.row3.offsetY
-    layers.typesFront.object3D.scale.setScalar(config.types.row3.scale)
-    layers.mapTongliang.object3D.scale.setScalar(1)
-    layers.mapPulse.object3D.scale.setScalar(1)
-    setTimelineReveal(1)
+  const typePose = (key) => {
+    if (key === 'types-back') return config.types.row1
+    if (key === 'types-mid') return config.types.row2
+    if (key === 'types-front') return config.types.row3
+    return { scale: 1, offsetY: 0 }
   }
 
-  const resetEntry = () => {
-    setVisible(overviewRoot, true)
-    Object.values(groups).forEach(resetGroupTransform)
-    applyDepths()
-    Object.values(layers).forEach((entity) => setOpacity(entity, 0))
-    layers.mapPulse.object3D.scale.setScalar(0.7)
-    setTimelineReveal(0.001)
+  const rebuildSpatialLayout = () => {
+    config.layers.forEach((layer) => {
+      const entity = entities.get(layer.key)
+      if (!entity) return
+      const local = localPointForLayer(layer.key)
+      const type = typePose(layer.key)
+      const final = rotatedPoint(layer.depthUnit, local.x, local.y + type.offsetY)
+      const start = rotatedPoint(initialDepthUnit, local.x, local.y + type.offsetY)
+      finalPoses.set(layer.key, { position: final, scale: type.scale })
+      entryStartPoses.set(layer.key, { position: start, scale: type.scale })
+      entity.object3D.rotation.set(angle, 0, 0)
+      entity.object3D.position.copy(final)
+      entity.object3D.scale.setScalar(type.scale)
+      entity.object3D.traverse((object) => { object.renderOrder = layer.renderOrder })
+      forEachMaterial(entity, (_, object) => { object.renderOrder = layer.renderOrder })
+      const debugLabel = root.querySelector(`[data-page2-debug-layer="${layer.key}"]`)
+      if (debugLabel) {
+        debugLabel.object3D.position.copy(rotatedPoint(layer.depthUnit, -0.49, 0.73))
+        debugLabel.object3D.rotation.set(angle, 0, 0)
+      }
+    })
+
+    const tongliangPose = finalPoses.get('map-tongliang')
+    if (tongliangPose) {
+      mapPulse.object3D.position.copy(tongliangPose.position)
+      mapPulse.object3D.rotation.set(angle, 0, 0)
+      debugTongliang.object3D.position.copy(tongliangPose.position)
+      debugTongliang.object3D.rotation.set(angle, 0, 0)
+    }
+    const ringPose = finalPoses.get('main-ring')
+    if (ringPose) {
+      debugRing.object3D.position.copy(ringPose.position)
+      debugRing.object3D.rotation.set(angle, 0, 0)
+    }
+    const dragonLayer = layerConfig('main-dragon')
+    const hitLocal = {
+      x: (config.fireEntryHotspot.x - 0.5) * config.background.width,
+      y: (0.5 - config.fireEntryHotspot.y) * config.background.height,
+    }
+    const hitPosition = rotatedPoint(dragonLayer.depthUnit, hitLocal.x, hitLocal.y)
+    ;[fireHit, ripple, debugFire].forEach((entity) => {
+      entity.object3D.position.copy(hitPosition)
+      entity.object3D.rotation.set(angle, 0, 0)
+      entity.object3D.traverse((object) => { object.renderOrder = dragonLayer.renderOrder + 1 })
+    })
+  }
+
+  const setLayerPose = (key, progress, { x = 0, up = 0, scaleFrom = null } = {}) => {
+    const entity = entities.get(key)
+    const start = entryStartPoses.get(key)
+    const final = finalPoses.get(key)
+    if (!entity || !start || !final) return
+    entity.object3D.position.lerpVectors(start.position, final.position, progress)
+    entity.object3D.position.x += x * (1 - progress)
+    entity.object3D.position.y += up * cosAngle * (1 - progress)
+    entity.object3D.position.z += up * sinAngle * (1 - progress)
+    entity.object3D.scale.setScalar(lerp(scaleFrom ?? final.scale, final.scale, progress))
+    setOpacity(entity, progress)
+  }
+
+  const layerProgress = (layer) => {
+    const entity = entities.get(layer.key)
+    if (!entity || !readyAssets.has(entity.dataset.page2AssetKey)) return 0
+    const scheduledStart = layer.layerIndex * config.overview.layerStagger
+    const readyStart = readyAtElapsed.get(layer.key) ?? 0
+    return easeOutCubic((elapsed - Math.max(scheduledStart, readyStart)) / config.overview.layerDuration)
   }
 
   const applyEntry = () => {
-    const title = interval(elapsed, 0, 700, easeOutBack)
-    setGroupPose(groups.title, { y: 0.028 * (1 - title), scale: 0.95 + title * 0.05, opacity: title })
-
-    const introLine = interval(elapsed, 180, 750)
-    setLayerPose(layers.introLine, { x: -0.055 * (1 - introLine), z: depth(config.intro.depthDragonLine), opacity: introLine })
-    const introText = interval(elapsed, 300, 700)
-    setLayerPose(layers.introText, { x: -0.042 * (1 - introText), z: depth(config.intro.depthText), opacity: introText })
-
-    const mapMain = interval(elapsed, 260, 820)
-    setLayerPose(layers.mapMain, { x: 0.052 * (1 - mapMain), z: depth(config.map.depthMain), opacity: mapMain })
-    const mapText = interval(elapsed, 450, 650)
-    setLayerPose(layers.mapText, { y: -0.022 * (1 - mapText), z: depth(config.map.depthText), opacity: mapText })
-    const tongliang = interval(elapsed, 750, 520)
-    setOpacity(layers.mapTongliang, tongliang)
-    setOpacity(layers.mapPulse, tongliang * 0.7)
-
-    const main = interval(elapsed, 550, 1050, easeInOutCubic)
-    setGroupPose(groups.main, {
-      y: -0.055 * (1 - main),
-      z: depth(-0.032 * (1 - main)),
-      scale: 0.94 + 0.06 * main,
-      opacity: main,
+    config.layers.forEach((layer) => {
+      const p = layerProgress(layer)
+      const options = {}
+      if (['intro-line', 'intro-text'].includes(layer.key)) options.x = -0.045
+      if (['map-main', 'map-text', 'map-tongliang'].includes(layer.key)) options.x = 0.045
+      if (layer.key === 'title') { options.up = 0.035; options.scaleFrom = 0.95 }
+      if (layer.key.startsWith('main-')) options.up = -0.045
+      if (layer.key.startsWith('types-')) options.scaleFrom = Math.max(0.9, finalPoses.get(layer.key)?.scale - 0.07)
+      if (layer.key.startsWith('timeline-')) options.up = -0.035
+      setLayerPose(layer.key, p, options)
     })
-
-    const typesTitle = interval(elapsed, 950, 650)
-    setLayerPose(layers.typesTitle, {
-      x: 0.035 * (1 - typesTitle),
-      y: -0.025 * (1 - typesTitle),
-      z: depth(config.types.depthTitle),
-      opacity: typesTitle,
-    })
-    const back = interval(elapsed, 1050, 700)
-    setLayerPose(layers.typesBack, {
-      y: config.types.row1.offsetY,
-      z: depth(config.types.row1.depth - 0.025 * (1 - back)),
-      scale: config.types.row1.scale * (0.96 + back * 0.04),
-      opacity: back,
-    })
-    const mid = interval(elapsed, 1200, 700, easeOutBack)
-    setLayerPose(layers.typesMid, {
-      y: config.types.row2.offsetY,
-      z: depth(config.types.row2.depth),
-      scale: 0.92 + (config.types.row2.scale - 0.92) * mid,
-      opacity: mid,
-    })
-    const front = interval(elapsed, 1370, 700)
-    setLayerPose(layers.typesFront, {
-      y: config.types.row3.offsetY - 0.025 * (1 - front),
-      z: depth(config.types.row3.depth),
-      scale: 0.95 + (config.types.row3.scale - 0.95) * front,
-      opacity: front,
-    })
-
-    setOpacity(layers.timelineBase, 1)
-    setTimelineReveal(interval(elapsed, 1450, 800, easeInOutCubic))
-    const nodes = interval(elapsed, 1750, 640, easeOutBack)
-    setLayerPose(layers.timelineNodes, {
-      z: depth(config.timeline.depthKeyNodes),
-      scale: 0.86 + nodes * 0.14,
-      opacity: nodes,
-    })
-    const texts = interval(elapsed, 2050, 600)
-    setLayerPose(layers.timelineTexts, { z: depth(config.timeline.depthTexts), opacity: texts })
+    const tongliang = layerProgress(layerConfig('map-tongliang'))
+    setOpacity(mapPulse, tongliang * 0.55)
   }
 
-  const applyContinuous = () => {
+  const applyFinal = () => {
+    Object.values(groups).forEach((group) => {
+      group.object3D.position.set(0, 0, 0)
+      group.object3D.scale.setScalar(1)
+    })
+    config.layers.forEach((layer) => {
+      const entity = entities.get(layer.key)
+      const pose = finalPoses.get(layer.key)
+      if (!entity || !pose) return
+      entity.object3D.position.copy(pose.position)
+      entity.object3D.rotation.x = angle
+      entity.object3D.scale.setScalar(pose.scale)
+      setOpacity(entity, readyAssets.has(entity.dataset.page2AssetKey) ? 1 : 0)
+    })
+  }
+
+  const applyContinuous = (delta) => {
+    continuousElapsed += delta
     const seconds = continuousElapsed / 1000
-    layers.ring.object3D.rotation.z = -(seconds / config.mainVisual.ringRotationSeconds) * Math.PI * 2
-    const mapPulse = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
-    layers.mapTongliang.object3D.scale.setScalar(1)
-    setOpacity(layers.mapTongliang, 0.76 + mapPulse * 0.24)
-    layers.mapPulse.object3D.scale.setScalar(1 + mapPulse * (config.map.tongliangPulseScale - 1))
-    setOpacity(layers.mapPulse, (1 - mapPulse) * 0.46)
-    layers.dancers.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 5.2) * config.mainVisual.dancersAmplitude
-    layers.dragon.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 4.7 + 0.82) * config.mainVisual.dragonAmplitude
+    const ring = entities.get('main-ring')
+    ring.object3D.rotation.z = -(seconds / config.mainVisual.ringRotationSeconds) * Math.PI * 2
+    const mapPoint = entities.get('map-tongliang')
+    const mapPulseValue = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
+    mapPoint.object3D.scale.setScalar(1)
+    setOpacity(mapPoint, 0.76 + mapPulseValue * 0.24)
+    mapPulse.object3D.scale.setScalar(1 + mapPulseValue * (config.map.tongliangPulseScale - 1))
+    setOpacity(mapPulse, (1 - mapPulseValue) * 0.46)
+    const dancers = entities.get('main-dancers')
+    const dragon = entities.get('main-dragon')
+    const pearl = entities.get('main-pearl')
+    const dancersPose = finalPoses.get('main-dancers')
+    const dragonPose = finalPoses.get('main-dragon')
+    const pearlPose = finalPoses.get('main-pearl')
+    dancers.object3D.position.copy(dancersPose.position)
+    dancers.object3D.position.z += Math.sin((seconds * Math.PI * 2) / 5.2) * config.mainVisual.dancersAmplitude
+    dragon.object3D.position.copy(dragonPose.position)
+    dragon.object3D.position.x += Math.sin((seconds * Math.PI * 2) / 4.7 + 0.82) * config.mainVisual.dragonAmplitude
     const pearlPulse = (Math.sin((seconds * Math.PI * 2) / 3.1) + 1) * 0.5
-    layers.pearl.object3D.position.y = Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlAmplitude
-    layers.pearl.object3D.scale.setScalar(1 + pearlPulse * 0.045)
-    setOpacity(layers.pearl, 0.84 + pearlPulse * 0.16)
-    setOpacity(layers.sparks, 0.9 + Math.sin(seconds * 1.05) * 0.04)
+    pearl.object3D.position.copy(pearlPose.position)
+    pearl.object3D.position.z += Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlAmplitude
+    pearl.object3D.scale.setScalar(1 + pearlPulse * 0.045)
+    setOpacity(pearl, 0.84 + pearlPulse * 0.16)
+    setOpacity(entities.get('main-sparks'), 0.9 + Math.sin(seconds * 1.05) * 0.04)
+
+    lateReveals.forEach((value, key) => {
+      value.elapsed += delta
+      const p = easeOutCubic(value.elapsed / 700)
+      setLayerPose(key, p)
+      if (p >= 1) lateReveals.delete(key)
+    })
   }
 
   const applyExit = () => {
     const t = easeInOutCubic(elapsed / config.overview.exitDuration)
     const opacity = 1 - t
-    setGroupPose(groups.title, { y: 0.05 * t, opacity })
-    setGroupPose(groups.intro, { x: -0.07 * t, opacity })
-    setGroupPose(groups.map, { x: 0.07 * t, opacity })
-    setGroupPose(groups.types, { x: -0.055 * t, y: -0.04 * t, opacity })
-    setGroupPose(groups.timeline, { x: 0.055 * t, y: -0.04 * t, opacity })
-    setGroupPose(groups.main, { y: -0.075 * t, z: depth(-0.05 * t), scale: 1 - t * 0.03, opacity })
+    const groupMoves = {
+      title: { x: 0, z: 0.05 }, intro: { x: -0.07, z: 0 }, map: { x: 0.07, z: 0 },
+      types: { x: -0.055, z: -0.04 }, timeline: { x: 0.055, z: -0.04 }, main: { x: 0, z: -0.075 },
+    }
+    Object.entries(groups).forEach(([key, group]) => {
+      const move = groupMoves[key]
+      group.object3D.position.set(move.x * t, 0, move.z * t)
+      setOpacity(group, opacity)
+    })
   }
 
-  const applyRestore = () => {
-    const t = easeOutCubic(elapsed / config.overview.restoreDuration)
-    applyFinal()
-    Object.values(groups).forEach((entity) => setOpacity(entity, t))
-    groups.title.object3D.position.y = 0.025 * (1 - t)
-    groups.intro.object3D.position.x = -0.03 * (1 - t)
-    groups.map.object3D.position.x = 0.03 * (1 - t)
-    groups.main.object3D.position.y = -0.035 * (1 - t)
-  }
-
+  rebuildSpatialLayout()
   setVisible(overviewRoot, false)
 
+  const resetEntry = () => {
+    setVisible(overviewRoot, true)
+    Object.values(groups).forEach((group) => group.object3D.position.set(0, 0, 0))
+    config.layers.forEach((layer) => setLayerPose(layer.key, 0))
+    setOpacity(mapPulse, 0)
+  }
+
   return {
-    setDepthDirection(sign) {
-      depthDirection = sign < 0 ? -1 : 1
-      applyDepths()
+    setDepthDirection() {
+      rebuildSpatialLayout()
+    },
+    markAssetReady(assetKey) {
+      readyAssets.add(assetKey)
+      const keys = layersByAsset.get(assetKey) || []
+      keys.forEach((key) => {
+        const layer = config.layers.find((item) => item.key === key)
+        layerElements.get(key)?.object3D.traverse((object) => {
+          if (object.material && layer) object.renderOrder = layer.renderOrder
+        })
+        readyAtElapsed.set(key, mode === 'entering' ? elapsed : 0)
+        if (mode === 'overview') lateReveals.set(key, { elapsed: 0 })
+      })
     },
     resetEntry,
     startEntry() {
@@ -277,7 +295,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       mode = 'restoring'
       setVisible(overviewRoot, true)
       applyFinal()
-      Object.values(groups).forEach((entity) => setOpacity(entity, 0))
+      Object.values(groups).forEach((group) => setOpacity(group, 0))
     },
     update(delta) {
       if (mode === 'hidden') return
@@ -289,10 +307,8 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
           applyFinal()
           onEntryComplete?.()
         }
-      } else if (mode === 'overview') {
-        continuousElapsed += delta
-        applyContinuous()
-      } else if (mode === 'exiting') {
+      } else if (mode === 'overview') applyContinuous(delta)
+      else if (mode === 'exiting') {
         applyExit()
         if (elapsed >= config.overview.exitDuration) {
           mode = 'hidden'
@@ -300,38 +316,30 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
           onExitComplete?.()
         }
       } else if (mode === 'restoring') {
-        applyRestore()
-        if (elapsed >= config.overview.restoreDuration) {
+        const t = easeOutCubic(elapsed / config.overview.restoreDuration)
+        applyFinal()
+        Object.values(groups).forEach((group) => setOpacity(group, t))
+        if (t >= 1) {
           mode = 'overview'
-          applyFinal()
           onRestoreComplete?.()
         }
       }
     },
-    hide() {
-      mode = 'hidden'
-      setVisible(overviewRoot, false)
-    },
-    showFinal() {
-      mode = 'overview'
-      setVisible(overviewRoot, true)
-      applyFinal()
-    },
+    hide() { mode = 'hidden'; setVisible(overviewRoot, false) },
+    showFinal() { mode = 'overview'; setVisible(overviewRoot, true); applyFinal() },
     getMode: () => mode,
     getProgress: () => mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
     getDebugState: () => ({
       mode,
       progress: mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
-      depthDirection,
-      title: config.title,
-      intro: config.intro,
-      map: config.map,
-      mainVisualDepths: config.mainVisual.depths,
-      types: config.types,
-      timeline: config.timeline,
+      rearEdgeOrigin: [0, rearEdgeY, 0],
+      cardFrontEdge: [0, rearEdgeY - config.spatial.cardDepthUnit, 0],
+      readyAssets: [...readyAssets],
+      layers: config.layers.map((layer) => ({
+        ...layer,
+        position: entities.get(layer.key)?.object3D.position.toArray() || null,
+      })),
     }),
-    destroy() {
-      mode = 'hidden'
-    },
+    destroy() { mode = 'hidden'; lateReveals.clear() },
   }
 }
