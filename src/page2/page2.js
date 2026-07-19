@@ -37,12 +37,32 @@ const assetEntries = [
   ['page2-timeline-texts-asset', 'timelineTexts'],
 ]
 
+const resolvePage2Config = (config) => {
+  const source = config && typeof config === 'object' ? config : {}
+  return {
+    ...PAGE2_CONFIG,
+    ...source,
+    assets: { ...PAGE2_CONFIG.assets, ...(source.assets || {}) },
+    background: { ...PAGE2_CONFIG.background, ...(source.background || {}) },
+    map: { ...PAGE2_CONFIG.map, ...(source.map || {}) },
+    mainVisual: { ...PAGE2_CONFIG.mainVisual, ...(source.mainVisual || {}) },
+    fireEntryHotspot: { ...PAGE2_CONFIG.fireEntryHotspot, ...(source.fireEntryHotspot || {}) },
+    spatial: { ...PAGE2_CONFIG.spatial, ...(source.spatial || {}) },
+    model: { ...PAGE2_CONFIG.model, ...(source.model || {}) },
+    hotspots: { ...PAGE2_CONFIG.hotspots, ...(source.hotspots || {}) },
+    layers: Array.isArray(source.layers) ? source.layers : PAGE2_CONFIG.layers,
+  }
+}
+
 const image = (id, key, config) =>
   `<img id="${id}" data-page2-src="${config.assets[key]}" alt="" draggable="false" crossorigin="anonymous" />`
 
-export const page2AssetsMarkup = (config) => `
-  ${assetEntries.map(([id, key]) => image(id, key, config)).join('')}
-`
+export const page2AssetsMarkup = (config = PAGE2_CONFIG) => {
+  const resolvedConfig = resolvePage2Config(config)
+  return `
+    ${assetEntries.map(([id, key]) => image(id, key, resolvedConfig)).join('')}
+  `
+}
 
 const fullLayer = (assetId, layer, assetKey) => `
   <a-image data-page2-layer="${layer}" data-page2-asset-key="${assetKey}" src="#${assetId}" width="${PAGE2_CONFIG.background.width}" height="${PAGE2_CONFIG.background.height}" position="0 0 0"
@@ -58,8 +78,10 @@ const hotspotMarkup = (hotspot, config, debug) => `
       color="#fff0b3" visible="${debug}"></a-text>
   </a-entity>`
 
-export function page2SceneMarkup(config, debug = false) {
+export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
+  const config = resolvePage2Config(inputConfig)
   const { width, height } = config.background
+  const fire = config.fireEntryHotspot
   const hinge = config.background.hingePosition
   const rearY = config.markerAspect / 2
   const spatialLine = (id, depthUnit, color) => `<a-box id="${id}" visible="${debug}" width="1" height=".006" depth=".004"

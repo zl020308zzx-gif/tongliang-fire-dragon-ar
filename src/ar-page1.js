@@ -78,6 +78,17 @@ export function renderArPage1(root) {
   const abortController = new AbortController()
   const { signal } = abortController
   const arBridge = {}
+  let page2Assets = ''
+  let page2Scene = ''
+  let page2Ui = ''
+
+  try {
+    page2Assets = page2AssetsMarkup(PAGE2_CONFIG)
+    page2Scene = page2SceneMarkup(PAGE2_CONFIG, page2Debug)
+    page2Ui = page2UiMarkup(PAGE2_CONFIG, page2Debug)
+  } catch (error) {
+    console.error('[page2] Scene markup disabled; Page1 remains available.', error)
+  }
 
   let legacyStorageCleaned = false
   try {
@@ -97,7 +108,7 @@ export function renderArPage1(root) {
         ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
         <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="none"></video>
         <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
-        <div class="page2-preload-assets">${page2AssetsMarkup(PAGE2_CONFIG)}</div>
+        <div class="page2-preload-assets">${page2Assets}</div>
       </div>
       <a-scene id="page1-ar-scene" class="preview-scene ar-scene" embedded
         mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no"
@@ -149,7 +160,7 @@ export function renderArPage1(root) {
             </a-entity>
           </a-entity>
         </a-entity>
-        ${page2SceneMarkup(PAGE2_CONFIG, page2Debug)}
+        ${page2Scene}
       </a-scene>
 
       <header class="page-title"><span>01</span><h1>竹骨成龙</h1></header>
@@ -157,7 +168,7 @@ export function renderArPage1(root) {
         ${config.craftStamps.labels.map((label, index) => `<span data-craft-stamp="${index}" class="${index === 0 ? 'is-current' : ''}">${label}</span>`).join('')}
       </div>
       ${arDebugPanel(debugMode, config)}
-      ${page2UiMarkup(PAGE2_CONFIG, page2Debug)}
+      ${page2Ui}
 
       <div class="hold-interaction-hint" hidden><i></i><b>长按</b></div>
       <div class="paper-slider-hint" hidden><i>↔</i></div>
@@ -696,7 +707,7 @@ export function renderArPage1(root) {
       },
     })
 
-    page2Controller = createPage2Experience({
+    if (page2Target && page2Anchor) page2Controller = createPage2Experience({
       root,
       scene,
       target: page2Target,
