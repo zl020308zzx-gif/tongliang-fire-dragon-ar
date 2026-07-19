@@ -83,9 +83,7 @@ export function createPage2Model({
       const materials = Array.isArray(object.material) ? object.material : [object.material]
       materials.forEach((material) => {
         const originalOpacity = originalMaterials.get(material) ?? 1
-        material.transparent = opacity < 1 || originalOpacity < 1
         material.opacity = originalOpacity * opacity
-        material.needsUpdate = true
       })
     })
   }
@@ -239,10 +237,16 @@ export function createPage2Model({
       if (!object.isMesh || !object.material) return
       if (Array.isArray(object.material)) {
         object.material = object.material.map((material) => material.clone())
-        object.material.forEach((material) => originalMaterials.set(material, material.opacity))
+        object.material.forEach((material) => {
+          originalMaterials.set(material, material.opacity)
+          material.transparent = true
+          material.needsUpdate = true
+        })
       } else {
         object.material = object.material.clone()
         originalMaterials.set(object.material, object.material.opacity)
+        object.material.transparent = true
+        object.material.needsUpdate = true
       }
       object.castShadow = false
       object.receiveShadow = false

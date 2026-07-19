@@ -5,6 +5,16 @@ const easeInOutCubic = (value) => {
   return t < 0.5 ? 4 * t ** 3 : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
 const lerp = (from, to, progress) => from + (to - from) * progress
+const invalidNumericLabels = new Set()
+
+const finiteOr = (value, fallback, label) => {
+  if (Number.isFinite(value)) return value
+  if (!invalidNumericLabels.has(label)) {
+    invalidNumericLabels.add(label)
+    console.error(`[page2] Invalid numeric value: ${label}`, value)
+  }
+  return fallback
+}
 
 const forEachMaterial = (entity, callback) => {
   entity?.object3D?.traverse((object) => {
@@ -20,7 +30,6 @@ const setOpacity = (entity, opacity) => {
     materialFound = true
     material.transparent = true
     material.opacity = clamp01(opacity)
-    material.needsUpdate = true
   })
   if (!materialFound) entity?.setAttribute('material', 'opacity', clamp01(opacity))
 }
@@ -43,6 +52,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     timeline: root.querySelector('#page2-timeline-root'),
   }
   const entities = new Map(config.layers.map((layer) => [layer.key, root.querySelector(`[data-page2-layer="${layer.key}"]`)]))
+  const layerElements = [...entities.values()].filter(Boolean)
   const layersByAsset = new Map()
   entities.forEach((entity, key) => {
     const assetKey = entity?.dataset.page2AssetKey
@@ -61,21 +71,24 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
   const lateReveals = new Map()
   const finalPoses = new Map()
   const entryStartPoses = new Map()
-  const angle = THREE.MathUtils.degToRad(config.background.openAngle)
+  const angle = THREE.MathUtils.degToRad(finiteOr(config.background.openAngle, 78, 'background.openAngle'))
   const cosAngle = Math.cos(angle)
   const sinAngle = Math.sin(angle)
-  const rearEdgeY = config.markerAspect / 2
-  const verticalCenterZ = (config.background.height / 2) * sinAngle
-  const initialDepthUnit = (config.overview.initialDepthMm / config.spatial.markerWidthMm) * config.spatial.depthScale
+  const rearEdgeY = finiteOr(config.markerAspect, 210 / 148, 'markerAspect') / 2
+  const verticalCenterZ = (finiteOr(config.background.height, 1.53, 'background.height') / 2) * sinAngle
+  const initialDepthUnit = (
+    finiteOr(config.overview.initialDepthMm, 6, 'overview.initialDepthMm')
+    / finiteOr(config.spatial.markerWidthMm, 148, 'spatial.markerWidthMm')
+  ) * finiteOr(config.spatial.depthScale, 1, 'spatial.depthScale')
   let mode = 'hidden'
   let elapsed = 0
   let continuousElapsed = 0
 
   const layerConfig = (key) => config.layers.find((layer) => layer.key === key)
-  const rotatedPoint = (depthUnit, localX = 0, localY = 0) => new THREE.Vector3(
-    localX,
-    rearEdgeY - depthUnit + localY * cosAngle,
-    verticalCenterZ + localY * sinAngle,
+  const rotatedPoint = (depthUnit, localX = 0, localY = 0, label = 'layer') => new THREE.Vector3(
+    finiteOr(localX, 0, `${label}.x`),
+    rearEdgeY - finiteOr(depthUnit, initialDepthUnit, `${label}.depthUnit`) + finiteOr(localY, 0, `${label}.localY`) * cosAngle,
+    verticalCenterZ + finiteOr(localY, 0, `${label}.localY`) * sinAngle,
   )
 
   const localPointForLayer = (key) => {
@@ -107,10 +120,11 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       if (!entity) return
       const local = localPointForLayer(layer.key)
       const type = typePose(layer.key)
-      const final = rotatedPoint(layer.depthUnit, local.x, local.y + type.offsetY)
-      const start = rotatedPoint(initialDepthUnit, local.x, local.y + type.offsetY)
-      finalPoses.set(layer.key, { position: final, scale: type.scale })
-      entryStartPoses.set(layer.key, { position: start, scale: type.scale })
+      const final = rotatedPoint(layer.depthUnit, local.x, local.y + type.offsetY, layer.key)
+      const start = rotatedPoint(initialDepthUnit, local.x, local.y + type.offsetY, `${layer.key}.start`)
+      const scale = finiteOr(type.scale, 1, `${layer.key}.scale`)
+      finalPoses.set(layer.key, { position: final, scale })
+      entryStartPoses.set(layer.key, { position: start, scale })
       entity.object3D.rotation.set(angle, 0, 0)
       entity.object3D.position.copy(final)
       entity.object3D.scale.setScalar(type.scale)
@@ -153,12 +167,15 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     const start = entryStartPoses.get(key)
     const final = finalPoses.get(key)
     if (!entity || !start || !final) return
-    entity.object3D.position.lerpVectors(start.position, final.position, progress)
-    entity.object3D.position.x += x * (1 - progress)
-    entity.object3D.position.y += up * cosAngle * (1 - progress)
-    entity.object3D.position.z += up * sinAngle * (1 - progress)
-    entity.object3D.scale.setScalar(lerp(scaleFrom ?? final.scale, final.scale, progress))
-    setOpacity(entity, progress)
+    const safeProgress = clamp01(finiteOr(progress, 0, `${key}.progress`))
+    const safeX = finiteOr(x, 0, `${key}.entryX`)
+    const safeUp = finiteOr(up, 0, `${key}.entryUp`)
+    entity.object3D.position.lerpVectors(start.position, final.position, safeProgress)
+    entity.object3D.position.x += safeX * (1 - safeProgress)
+    entity.object3D.position.y += safeUp * cosAngle * (1 - safeProgress)
+    entity.object3D.position.z += safeUp * sinAngle * (1 - safeProgress)
+    entity.object3D.scale.setScalar(finiteOr(lerp(scaleFrom ?? final.scale, final.scale, safeProgress), final.scale, `${key}.animatedScale`))
+    setOpacity(entity, safeProgress)
   }
 
   const layerProgress = (layer) => {
@@ -266,16 +283,20 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       rebuildSpatialLayout()
     },
     markAssetReady(assetKey) {
+      if (readyAssets.has(assetKey)) return false
       readyAssets.add(assetKey)
       const keys = layersByAsset.get(assetKey) || []
       keys.forEach((key) => {
         const layer = config.layers.find((item) => item.key === key)
-        layerElements.get(key)?.object3D.traverse((object) => {
+        const entity = entities.get(key)
+        setVisible(entity, true)
+        entity?.object3D.traverse((object) => {
           if (object.material && layer) object.renderOrder = layer.renderOrder
         })
         readyAtElapsed.set(key, mode === 'entering' ? elapsed : 0)
         if (mode === 'overview') lateReveals.set(key, { elapsed: 0 })
       })
+      return true
     },
     resetEntry,
     startEntry() {
@@ -328,6 +349,46 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     hide() { mode = 'hidden'; setVisible(overviewRoot, false) },
     showFinal() { mode = 'overview'; setVisible(overviewRoot, true); applyFinal() },
     getMode: () => mode,
+    getLayerElements: () => layerElements,
+    getLayerById: () => entities,
+    getReadyAssets: () => new Set(readyAssets),
+    ensureReadyLayersVisible() {
+      setVisible(overviewRoot, true)
+      readyAssets.forEach((assetKey) => {
+        ;(layersByAsset.get(assetKey) || []).forEach((key) => setVisible(entities.get(key), true))
+      })
+      applyFinal()
+    },
+    validateVisibility() {
+      const strongLayers = []
+      const visibleLayers = layerElements.filter((element) => {
+        if (!element.object3D || element.object3D.visible === false) return false
+        let visibleMesh = false
+        element.object3D.traverse((child) => {
+          if (visibleMesh || !child.isMesh || child.visible === false) return
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          visibleMesh = materials.some((material) => {
+            const image = material?.map?.image
+            const visible = material?.visible !== false
+              && Number.isFinite(material?.opacity)
+              && material.opacity > 0.05
+              && image?.complete === true
+              && image.naturalWidth > 0
+              && image.naturalHeight > 0
+            if (visible && material.opacity >= 0.9) strongLayers.push(element)
+            return visible
+          })
+        })
+        return visibleMesh
+      })
+      return {
+        visibleLayers,
+        visibleLayerIds: visibleLayers.map((element) => element.dataset.page2Layer),
+        visibleLayerCount: visibleLayers.length,
+        visibleMainCount: visibleLayers.filter((element) => element.dataset.page2Layer?.startsWith('main-')).length,
+        strongLayerCount: new Set(strongLayers).size,
+      }
+    },
     getProgress: () => mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
     getDebugState: () => ({
       mode,

@@ -707,24 +707,35 @@ export function renderArPage1(root) {
       },
     })
 
-    if (page2Target && page2Anchor) page2Controller = createPage2Experience({
-      root,
-      scene,
-      target: page2Target,
-      anchor: page2Anchor,
-      config: PAGE2_CONFIG,
-      debug: page2Debug,
-      onActivate() {
-        stableAnchorController?.setTracked(false)
-        setEntityVisible(stableAnchor, false)
-        hotspot?.setTracked(false)
-        panelController?.pause()
-        if (craftStarted) arBridge.pauseTracking?.()
-        ui.hideModeSelect()
-        ui.hideLost()
-        arBridge.hideHints?.('已切换至第二页识别图')
-      },
-    })
+    if (page2Target && page2Anchor) {
+      try {
+        page2Controller = createPage2Experience({
+          root,
+          scene,
+          target: page2Target,
+          anchor: page2Anchor,
+          config: PAGE2_CONFIG,
+          debug: page2Debug,
+          onActivate() {
+            stableAnchorController?.setTracked(false)
+            setEntityVisible(stableAnchor, false)
+            hotspot?.setTracked(false)
+            panelController?.pause()
+            if (craftStarted) arBridge.pauseTracking?.()
+            ui.hideModeSelect()
+            ui.hideLost()
+            arBridge.hideHints?.('已切换至第二页识别图')
+          },
+        })
+      } catch (error) {
+        console.error('[page2] initialization failed', error)
+        const page2Error = root.querySelector('.page2-error')
+        if (page2Error) {
+          page2Error.textContent = '第二页初始化失败，请刷新后重新扫描'
+          page2Error.hidden = false
+        }
+      }
+    }
 
     lifecycle = createTargetLifecycle({
       target,
