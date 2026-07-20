@@ -47,7 +47,7 @@ const progressMessage = (snapshot) => {
   if (snapshot.failedCount > 0 && snapshot.settledCount === snapshot.totalCount) {
     return '部分内容加载较慢，已显示可用图景'
   }
-  if (snapshot.settledCount === snapshot.totalCount) return '龙脉图景准备完成'
+  if (snapshot.settledCount === snapshot.totalCount) return '核心图景已准备，请对准识别图'
   if (snapshot.backgroundReady && snapshot.titleReady) return '核心图景已准备，可开始扫描'
   if (snapshot.decodedCount > 2) return '正在加载文化图鉴'
   if (snapshot.loadedCount > snapshot.decodedCount) return '正在解析视觉素材'
@@ -62,7 +62,11 @@ const updateLoadingUi = (root, snapshot, debug) => {
   const count = panel.querySelector('[data-page2-loading-count]')
   detail.textContent = progressMessage(snapshot)
   progress.style.width = `${snapshot.progress.toFixed(1)}%`
-  count.textContent = `已准备 ${snapshot.decodedCount} / ${snapshot.totalCount}`
+  count.textContent = debug
+    ? `loaded ${snapshot.loadedCount}｜decoded ${snapshot.decodedCount}｜failed ${snapshot.failedCount}`
+    : snapshot.settledCount === snapshot.totalCount
+      ? '100%'
+      : `${Math.round(snapshot.progress)}%`
   panel.dataset.status = snapshot.settledCount === snapshot.totalCount ? 'settled' : 'loading'
   panel.hidden = false
   if (debug) panel.title = `requested ${snapshot.requestedCount}｜loaded ${snapshot.loadedCount}｜decoded ${snapshot.decodedCount}｜failed ${snapshot.failedCount}`

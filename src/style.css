@@ -975,8 +975,10 @@ canvas {
 }
 .page2-loading-copy { min-width: 0; }
 .page2-loading-copy strong,
+.page2-loading-copy span,
 .page2-loading-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.page2-loading-copy strong { color: #ffd888; font-size: 13px; letter-spacing: .06em; }
+.page2-loading-copy strong { color: #ffd888; font-size: 15px; letter-spacing: .1em; }
+.page2-loading-copy span { margin-top: 2px; color: #e7bf78; font-size: 10px; letter-spacing: .04em; }
 .page2-loading-copy small { margin-top: 3px; color: #d9b77b; font: 11px/1.2 system-ui, sans-serif; }
 .page2-loading-status > [data-page2-loading-count] { color: #d6a953; font: 10px/1 system-ui, sans-serif; white-space: nowrap; }
 .page2-loading-track {
@@ -996,6 +998,32 @@ canvas {
   transition: width .18s ease;
 }
 @keyframes page2-loading-pulse { 50% { transform: scale(.88); opacity: .68; } }
+
+.page2-scan-guide {
+  display: none;
+  position: fixed;
+  z-index: 28;
+  top: max(78px, calc(env(safe-area-inset-top) + 66px));
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 36px);
+  margin: 0;
+  transform: translateX(-50%);
+  padding: 8px 15px;
+  border: 1px solid rgba(225, 172, 76, .46);
+  border-radius: 999px;
+  color: #f9d995;
+  background: rgba(40, 13, 6, .76);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+  pointer-events: none;
+  font: 600 12px/1.25 system-ui, sans-serif;
+  transition: opacity .28s ease, transform .28s ease;
+}
+
+.page1-ar.is-page2-route:not(.is-page2-active) .page2-scan-guide {
+  display: block;
+  animation: page2-hint-breathe 2.8s ease-in-out infinite;
+}
 
 .page2-ui {
   display: none;
@@ -1075,6 +1103,7 @@ canvas {
 
 .page2-guide strong { display: block; margin-bottom: 7px; color: #ffc95f; font-size: 18px; }
 .page2-guide p { margin: 0; font-size: 14px; line-height: 1.65; }
+.page2-guide:not([hidden]) { animation: page2-guide-enter .32s ease-out both; }
 .page2-tracking-lost { font-weight: 700; }
 .page2-error { z-index: 50; color: #ffd3be; border-color: #d95e39; }
 
@@ -1099,6 +1128,10 @@ canvas {
 .page2-model-hint { bottom: max(76px, calc(env(safe-area-inset-bottom) + 64px)); animation: none; }
 
 @keyframes page2-hint-breathe { 50% { box-shadow: 0 0 22px rgba(242, 151, 44, .45); transform: translateX(-50%) scale(1.025); } }
+@keyframes page2-guide-enter {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
 
 .page2-model-controls {
   position: fixed;

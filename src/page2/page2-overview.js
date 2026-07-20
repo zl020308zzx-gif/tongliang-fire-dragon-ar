@@ -60,8 +60,11 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     if (!layersByAsset.has(assetKey)) layersByAsset.set(assetKey, [])
     layersByAsset.get(assetKey).push(key)
   })
-  const mapPulse = root.querySelector('#page2-map-tongliang-pulse')
+  const mapGlow = root.querySelector('#page2-map-tongliang-glow')
+  const introGlow = root.querySelector('#page2-intro-dragon-glow')
+  const pearlGlow = root.querySelector('#page2-main-pearl-glow')
   const fireHit = root.querySelector('#page2-fire-entry-hit')
+  const fireCue = root.querySelector('#page2-fire-entry-cue')
   const ripple = root.querySelector('#page2-entry-ripple')
   const debugRing = root.querySelector('#page2-debug-ring-center')
   const debugFire = root.querySelector('#page2-debug-fire-hotspot')
@@ -71,6 +74,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
   const lateReveals = new Map()
   const finalPoses = new Map()
   const entryStartPoses = new Map()
+  const decorationPoses = new Map()
   const angle = THREE.MathUtils.degToRad(finiteOr(config.background.openAngle, 78, 'background.openAngle'))
   const cosAngle = Math.cos(angle)
   const sinAngle = Math.sin(angle)
@@ -96,15 +100,34 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       x: (config.mainVisual.ringCenterX - 0.5) * config.background.width,
       y: (0.5 - config.mainVisual.ringCenterY) * config.background.height,
     }
-    if (key === 'main-pearl') return {
-      x: (config.mainVisual.pearlCenterX - 0.5) * config.background.width,
-      y: (0.5 - config.mainVisual.pearlCenterY) * config.background.height,
-    }
-    if (key === 'map-tongliang') return {
-      x: (config.map.tongliangX + config.map.tongliangOffsetX - 0.5) * config.background.width,
-      y: (0.5 - config.map.tongliangY - config.map.tongliangOffsetY) * config.background.height,
-    }
     return { x: 0, y: 0 }
+  }
+
+  const normalizedLocalPoint = (x, y, offsetX = 0, offsetY = 0) => ({
+    x: (x + offsetX - 0.5) * config.background.width,
+    y: (0.5 - y - offsetY) * config.background.height,
+  })
+
+  const setGlow = (entity, softOpacity, ringOpacity, scale = 1) => {
+    if (!entity) return
+    entity.object3D.scale.setScalar(scale)
+    forEachMaterial(entity, (material) => {
+      if (material.blending !== THREE.AdditiveBlending) {
+        material.blending = THREE.AdditiveBlending
+        material.depthWrite = false
+        material.needsUpdate = true
+      }
+    })
+    setOpacity(entity.querySelector('[data-page2-glow-soft]'), softOpacity)
+    setOpacity(entity.querySelector('[data-page2-glow-ring]'), ringOpacity)
+  }
+
+  const moveOnBoard = (entity, pose, { x = 0, vertical = 0, depth = 0 } = {}) => {
+    if (!entity || !pose?.position) return
+    entity.object3D.position.copy(pose.position)
+    entity.object3D.position.x += x
+    entity.object3D.position.y += vertical * cosAngle - depth * sinAngle
+    entity.object3D.position.z += vertical * sinAngle + depth * cosAngle
   }
 
   const typePose = (key) => {
@@ -137,13 +160,34 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       }
     })
 
-    const tongliangPose = finalPoses.get('map-tongliang')
-    if (tongliangPose) {
-      mapPulse.object3D.position.copy(tongliangPose.position)
-      mapPulse.object3D.rotation.set(angle, 0, 0)
-      debugTongliang.object3D.position.copy(tongliangPose.position)
+    const placeDecoration = (entity, key, local, depthOffset = 0.002) => {
+      const layer = layerConfig(key)
+      if (!entity || !layer) return null
+      const position = rotatedPoint(layer.depthUnit + depthOffset, local.x, local.y, `${key}.decoration`)
+      entity.object3D.position.copy(position)
+      entity.object3D.rotation.set(angle, 0, 0)
+      entity.object3D.traverse((object) => { object.renderOrder = layer.renderOrder + 2 })
+      decorationPoses.set(entity.id, position.clone())
+      return position
+    }
+    const tongliangPoint = placeDecoration(mapGlow, 'map-tongliang', normalizedLocalPoint(
+      config.map.tongliangX,
+      config.map.tongliangY,
+      config.map.tongliangOffsetX,
+      config.map.tongliangOffsetY,
+    ))
+    if (tongliangPoint) {
+      debugTongliang.object3D.position.copy(tongliangPoint)
       debugTongliang.object3D.rotation.set(angle, 0, 0)
     }
+    placeDecoration(introGlow, 'intro-line', normalizedLocalPoint(
+      config.intro.dragonGlowCenterX,
+      config.intro.dragonGlowCenterY,
+    ))
+    placeDecoration(pearlGlow, 'main-pearl', normalizedLocalPoint(
+      config.mainVisual.pearlCenterX,
+      config.mainVisual.pearlCenterY,
+    ))
     const ringPose = finalPoses.get('main-ring')
     if (ringPose) {
       debugRing.object3D.position.copy(ringPose.position)
@@ -155,7 +199,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       y: (0.5 - config.fireEntryHotspot.y) * config.background.height,
     }
     const hitPosition = rotatedPoint(dragonLayer.depthUnit, hitLocal.x, hitLocal.y)
-    ;[fireHit, ripple, debugFire].forEach((entity) => {
+    ;[fireHit, fireCue, ripple, debugFire].forEach((entity) => {
       entity.object3D.position.copy(hitPosition)
       entity.object3D.rotation.set(angle, 0, 0)
       entity.object3D.traverse((object) => { object.renderOrder = dragonLayer.renderOrder + 1 })
@@ -199,7 +243,11 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       setLayerPose(layer.key, p, options)
     })
     const tongliang = layerProgress(layerConfig('map-tongliang'))
-    setOpacity(mapPulse, tongliang * 0.55)
+    setGlow(mapGlow, tongliang * 0.13, tongliang * 0.48, 0.92)
+    const intro = layerProgress(layerConfig('intro-line'))
+    setGlow(introGlow, intro * 0.08, intro * 0.2, 0.96)
+    const pearl = layerProgress(layerConfig('main-pearl'))
+    setGlow(pearlGlow, pearl * 0.12, pearl * 0.34, 0.92)
   }
 
   const applyFinal = () => {
@@ -216,6 +264,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       entity.object3D.scale.setScalar(pose.scale)
       setOpacity(entity, readyAssets.has(entity.dataset.page2AssetKey) ? 1 : 0)
     })
+    setVisible(fireCue, mode === 'overview')
   }
 
   const applyContinuous = (delta) => {
@@ -226,25 +275,61 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     const mapPoint = entities.get('map-tongliang')
     const mapPulseValue = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
     mapPoint.object3D.scale.setScalar(1)
-    setOpacity(mapPoint, 0.76 + mapPulseValue * 0.24)
-    mapPulse.object3D.scale.setScalar(1 + mapPulseValue * (config.map.tongliangPulseScale - 1))
-    setOpacity(mapPulse, (1 - mapPulseValue) * 0.46)
+    setOpacity(mapPoint, 0.72 + mapPulseValue * 0.28)
+    setGlow(
+      mapGlow,
+      0.08 + mapPulseValue * 0.13,
+      0.2 + (1 - mapPulseValue) * 0.42,
+      1 + mapPulseValue * (config.map.tongliangPulseScale - 1),
+    )
+    const introLine = entities.get('intro-line')
+    const introPulse = (Math.sin((seconds * Math.PI * 2) / (config.intro.pulseDuration / 1000) + 0.45) + 1) * 0.5
+    setOpacity(introLine, 0.8 + introPulse * 0.2)
+    setGlow(introGlow, 0.045 + introPulse * 0.085, 0.09 + introPulse * 0.17, 0.98 + introPulse * 0.05)
+    const performers = entities.get('main-performers')
     const dancers = entities.get('main-dancers')
     const dragon = entities.get('main-dragon')
     const pearl = entities.get('main-pearl')
+    const scene = entities.get('main-scene')
+    const performersPose = finalPoses.get('main-performers')
     const dancersPose = finalPoses.get('main-dancers')
     const dragonPose = finalPoses.get('main-dragon')
     const pearlPose = finalPoses.get('main-pearl')
-    dancers.object3D.position.copy(dancersPose.position)
-    dancers.object3D.position.z += Math.sin((seconds * Math.PI * 2) / 5.2) * config.mainVisual.dancersAmplitude
-    dragon.object3D.position.copy(dragonPose.position)
-    dragon.object3D.position.x += Math.sin((seconds * Math.PI * 2) / 4.7 + 0.82) * config.mainVisual.dragonAmplitude
+    const scenePose = finalPoses.get('main-scene')
+    const sharedRhythm = Math.sin((seconds * Math.PI * 2) / 5.1)
+    moveOnBoard(scene, scenePose, { vertical: Math.sin(seconds * 0.72) * config.mainVisual.sceneAmplitude })
+    moveOnBoard(performers, performersPose, {
+      vertical: Math.sin((seconds * Math.PI * 2) / 4.8 + 0.38) * config.mainVisual.performersAmplitude,
+      depth: Math.sin((seconds * Math.PI * 2) / 5.7) * config.mainVisual.performersAmplitude * 0.35,
+    })
+    moveOnBoard(dancers, dancersPose, {
+      x: Math.cos((seconds * Math.PI * 2) / 5.1) * config.mainVisual.dancersMotionAmplitude * 0.32,
+      vertical: sharedRhythm * config.mainVisual.dancersMotionAmplitude,
+      depth: Math.sin((seconds * Math.PI * 2) / 5.1 + 0.35) * config.mainVisual.dancersMotionAmplitude * 0.28,
+    })
+    moveOnBoard(dragon, dragonPose, {
+      x: Math.cos((seconds * Math.PI * 2) / 5.1 + 0.18) * config.mainVisual.dragonMotionAmplitude * 0.42,
+      vertical: Math.sin((seconds * Math.PI * 2) / 5.1 + 0.16) * config.mainVisual.dragonMotionAmplitude,
+      depth: Math.sin((seconds * Math.PI * 2) / 4.6 + 0.82) * config.mainVisual.dragonMotionAmplitude * 0.38,
+    })
     const pearlPulse = (Math.sin((seconds * Math.PI * 2) / 3.1) + 1) * 0.5
-    pearl.object3D.position.copy(pearlPose.position)
-    pearl.object3D.position.z += Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlAmplitude
-    pearl.object3D.scale.setScalar(1 + pearlPulse * 0.045)
+    const pearlMotion = {
+      x: Math.cos((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlMotionAmplitude * 0.38,
+      vertical: Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlMotionAmplitude,
+      depth: Math.sin((seconds * Math.PI * 2) / 3.7) * config.mainVisual.pearlMotionAmplitude * 0.28,
+    }
+    moveOnBoard(pearl, pearlPose, pearlMotion)
+    moveOnBoard(pearlGlow, { position: decorationPoses.get(pearlGlow.id) }, pearlMotion)
+    pearl.object3D.scale.setScalar(1)
     setOpacity(pearl, 0.84 + pearlPulse * 0.16)
+    setGlow(pearlGlow, 0.06 + pearlPulse * 0.13, 0.12 + pearlPulse * 0.28, 0.94 + pearlPulse * 0.12)
     setOpacity(entities.get('main-sparks'), 0.9 + Math.sin(seconds * 1.05) * 0.04)
+
+    setVisible(fireCue, true)
+    const cuePulse = (Math.sin(seconds * Math.PI * 1.35) + 1) * 0.5
+    fireCue.object3D.scale.setScalar(0.96 + cuePulse * 0.1)
+    setOpacity(fireCue.querySelector('[data-page2-fire-cue-ring]'), 0.32 + cuePulse * 0.42)
+    setOpacity(fireCue.querySelector('[data-page2-fire-cue-dot]'), 0.62 + cuePulse * 0.34)
 
     lateReveals.forEach((value, key) => {
       value.elapsed += delta
@@ -296,7 +381,10 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
         entity.object3D.rotation.z = 0
       }
     })
-    setOpacity(mapPulse, 0)
+    setGlow(mapGlow, 0, 0, 1)
+    setGlow(introGlow, 0, 0, 1)
+    setGlow(pearlGlow, 0, 0, 1)
+    setVisible(fireCue, false)
   }
 
   return {
@@ -328,11 +416,13 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       if (mode === 'exiting') return
       elapsed = 0
       mode = 'exiting'
+      setVisible(fireCue, false)
       applyFinal()
     },
     restore() {
       elapsed = 0
       mode = 'restoring'
+      setVisible(fireCue, false)
       setVisible(overviewRoot, true)
       applyFinal()
       Object.values(groups).forEach((group) => setOpacity(group, 0))
@@ -361,12 +451,13 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
         Object.values(groups).forEach((group) => setOpacity(group, t))
         if (t >= 1) {
           mode = 'overview'
+          setVisible(fireCue, true)
           onRestoreComplete?.()
         }
       }
     },
-    hide() { mode = 'hidden'; setVisible(overviewRoot, false) },
-    showFinal() { mode = 'overview'; setVisible(overviewRoot, true); applyFinal() },
+    hide() { mode = 'hidden'; setVisible(fireCue, false); setVisible(overviewRoot, false) },
+    showFinal() { mode = 'overview'; setVisible(overviewRoot, true); applyFinal(); setVisible(fireCue, true) },
     getMode: () => mode,
     getLayerElements: () => layerElements,
     getLayerById: () => entities,

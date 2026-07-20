@@ -23,10 +23,11 @@ export function createPage2Particles({ root, config }) {
   const sparkTexture = createSparkTexture(THREE)
   const isLowPower = (navigator.hardwareConcurrency || 4) <= 4
   const total = isLowPower ? config.particles.low : config.particles.normal
+  const sizeScale = config.particles.sizeScale || 1
   const definitions = [
-    { id: 'far', ratio: 1 - config.particles.foregroundRatio - config.particles.middleRatio, size: 0.009, opacity: 0.42, z: [-0.08, 0.02], speed: [0.018, 0.045] },
-    { id: 'middle', ratio: config.particles.middleRatio, size: 0.014, opacity: 0.76, z: [0.02, 0.16], speed: [0.035, 0.085] },
-    { id: 'front', ratio: config.particles.foregroundRatio, size: 0.022, opacity: 0.92, z: [0.16, 0.32], speed: [0.05, 0.12] },
+    { id: 'far', ratio: 1 - config.particles.foregroundRatio - config.particles.middleRatio, size: 0.012 * sizeScale, opacity: 0.46, depth: [-0.2, -0.06], speed: [0.035, 0.075] },
+    { id: 'middle', ratio: config.particles.middleRatio, size: 0.018 * sizeScale, opacity: 0.82, depth: [-0.07, 0.14], speed: [0.065, 0.14] },
+    { id: 'front', ratio: config.particles.foregroundRatio, size: 0.026 * sizeScale, opacity: 0.96, depth: [0.12, 0.3], speed: [0.09, 0.19] },
   ]
   const layers = definitions.map((definition, index) => {
     const count = Math.max(4, Math.round(total * definition.ratio))
@@ -36,7 +37,7 @@ export function createPage2Particles({ root, config }) {
     const geometry = new THREE.BufferGeometry()
     const material = new THREE.PointsMaterial({
       map: sparkTexture,
-      color: index === 0 ? 0xd65a21 : 0xffa52f,
+      color: index === 0 ? 0xd43818 : index === 1 ? 0xff6427 : 0xffb13e,
       size: definition.size,
       transparent: true,
       opacity: 0,
@@ -51,14 +52,14 @@ export function createPage2Particles({ root, config }) {
     const resetParticle = (particleIndex, initial = false) => {
       const offset = particleIndex * 3
       const angle = randomBetween(0, Math.PI * 2)
-      const radius = randomBetween(0.04, 0.34)
+      const radius = randomBetween(0.06, 0.52)
       positions[offset] = Math.cos(angle) * radius
-      positions[offset + 1] = randomBetween(-0.3, 0.14) - (initial ? Math.random() * 0.16 : 0)
-      positions[offset + 2] = randomBetween(definition.z[0], definition.z[1])
+      positions[offset + 1] = randomBetween(definition.depth[0], definition.depth[1])
+      positions[offset + 2] = randomBetween(-0.38, 0.12) - (initial ? Math.random() * 0.18 : 0)
       const speed = randomBetween(definition.speed[0], definition.speed[1])
-      velocities[offset] = Math.cos(angle) * speed * 0.55
-      velocities[offset + 1] = speed
-      velocities[offset + 2] = randomBetween(-0.012, 0.018)
+      velocities[offset] = Math.cos(angle) * speed * 0.42
+      velocities[offset + 1] = randomBetween(-0.025, 0.035)
+      velocities[offset + 2] = speed
       seeds[particleIndex] = Math.random() * Math.PI * 2
     }
     for (let particleIndex = 0; particleIndex < count; particleIndex += 1) resetParticle(particleIndex, true)
@@ -117,7 +118,7 @@ export function createPage2Particles({ root, config }) {
           layer.positions[offset + 1] += layer.velocities[offset + 1] * seconds
           layer.positions[offset + 2] += layer.velocities[offset + 2] * seconds
           layer.positions[offset] += Math.sin(elapsed * 0.002 + layer.seeds[index]) * seconds * 0.006
-          if (layer.positions[offset + 1] > 0.58 || Math.abs(layer.positions[offset]) > 0.62) {
+          if (layer.positions[offset + 2] > 0.68 || Math.abs(layer.positions[offset]) > 0.78) {
             layer.resetParticle(index)
           }
         }

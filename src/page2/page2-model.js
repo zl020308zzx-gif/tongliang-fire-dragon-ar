@@ -44,6 +44,9 @@ export function createPage2Model({
   const modelLocalSize = new THREE.Vector3()
   const finalPosition = new THREE.Vector3()
   const entrancePosition = new THREE.Vector3()
+  const floorCenter = new THREE.Vector3()
+  const backgroundCenter = new THREE.Vector3()
+  const stageCenter = new THREE.Vector3()
   const worldBounds = new THREE.Box3()
   const debugBounds = new THREE.Box3()
   const debugBoxHelper = new THREE.Box3Helper(debugBounds, 0xffb33c)
@@ -112,17 +115,15 @@ export function createPage2Model({
 
   const updateLayoutPositions = () => {
     if (!layoutReady) return
-    const halfDepth = modelLocalSize.z * baseScale * 0.5
-    finalPosition.set(
-      0,
-      config.markerAspect / 2 - config.model.centerDepthUnit,
-      config.model.bottomClearanceUnit + halfDepth,
+    floorCenter.set(0, 0, config.floorBase.clearanceUnit)
+    const hinge = config.background.hingePosition
+    const boardOffset = new THREE.Vector3(0, config.background.height / 2, 0).applyEuler(
+      new THREE.Euler(THREE.MathUtils.degToRad(config.background.endRotationX), 0, 0),
     )
-    entrancePosition.set(
-      finalPosition.x,
-      finalPosition.y,
-      Math.max(0.005, finalPosition.z - config.model.entranceRiseUnit),
-    )
+    backgroundCenter.set(hinge.x, hinge.y, hinge.z).add(boardOffset)
+    stageCenter.copy(floorCenter).add(backgroundCenter).multiplyScalar(0.5)
+    finalPosition.copy(stageCenter)
+    entrancePosition.copy(finalPosition).addScaledVector(new THREE.Vector3(0, 0, 1), -config.model.entranceRiseUnit)
     particleRoot.object3D.position.copy(finalPosition)
   }
 
@@ -177,27 +178,14 @@ export function createPage2Model({
   const ensureSafeCardBounds = () => {
     if (!layoutReady) return
     userScale = clamp(userScale, config.model.minScale, config.model.maxScale)
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      applyTransform(1)
-      transform.object3D.updateWorldMatrix(true, true)
-      const bounds = measureCardBounds()
-      if (!bounds) break
-      const allowedWidth = 0.9
-      const allowedDepth = config.model.frontLimitUnit - config.model.backLimitUnit
-      const currentWidth = bounds.max.x - bounds.min.x
-      const currentDepth = bounds.max.y - bounds.min.y
-      const fit = Math.min(1, allowedWidth / Math.max(currentWidth, 0.0001), allowedDepth / Math.max(currentDepth, 0.0001))
-      if (fit < 0.999) {
-        userScale = Math.max(config.model.minScale, userScale * fit * 0.985)
-        continue
-      }
-      const heightShift = config.model.bottomClearanceUnit - bounds.min.z
-      if (Math.abs(heightShift) > 0.0005) {
-        finalPosition.z += heightShift
-        entrancePosition.z = Math.max(0.005, finalPosition.z - config.model.entranceRiseUnit)
-        continue
-      }
-      break
+    applyTransform(1)
+    transform.object3D.updateWorldMatrix(true, true)
+    const bounds = measureCardBounds()
+    const minimumBottom = config.floorBase.clearanceUnit + config.model.bottomClearanceUnit
+    if (bounds && bounds.min.z < minimumBottom) {
+      const heightShift = minimumBottom - bounds.min.z
+      finalPosition.z += heightShift
+      entrancePosition.z += heightShift
     }
     applyTransform(1)
     measureCardBounds()
@@ -240,12 +228,14 @@ export function createPage2Model({
         object.material.forEach((material) => {
           originalMaterials.set(material, material.opacity)
           material.transparent = true
+          material.side = THREE.DoubleSide
           material.needsUpdate = true
         })
       } else {
         object.material = object.material.clone()
         originalMaterials.set(object.material, object.material.opacity)
         object.material.transparent = true
+        object.material.side = THREE.DoubleSide
         object.material.needsUpdate = true
       }
       object.castShadow = false
@@ -284,6 +274,7 @@ export function createPage2Model({
     userScale = 1
     yaw = 0
     pitch = 0
+    updateLayoutPositions()
     ensureSafeCardBounds()
     setVisible(modelRoot, true)
     setVisible(hotspotRoot, false)
@@ -408,7 +399,6 @@ export function createPage2Model({
     }
     if (activePointers.size < 2) {
       pinchStartDistance = 0
-      if (loaded && modelRoot.object3D.visible) ensureSafeCardBounds()
     }
   }
 
@@ -442,6 +432,14 @@ export function createPage2Model({
     worldBoundsMin: worldBounds.min.toArray(),
     worldBoundsMax: worldBounds.max.toArray(),
     finalPosition: finalPosition.toArray(),
+    floorCenter: floorCenter.toArray(),
+    backgroundCenter: backgroundCenter.toArray(),
+    stageCenter: stageCenter.toArray(),
+    defaultState: {
+      position: finalPosition.toArray(),
+      rotation: { ...config.model.defaultRotation },
+      scale: baseScale,
+    },
     modelCenterDepthMm: config.model.centerDepthMm,
     bottomHeightUnit: bottomHeight,
     bottomHeightMm: bottomHeight * config.spatial.markerWidthMm,
@@ -452,7 +450,7 @@ export function createPage2Model({
       bottomClearanceMm: config.model.bottomClearanceMm,
       backLimitMm: config.model.backLimitMm,
       frontLimitMm: config.model.frontLimitMm,
-      widthLimitUnit: 0.9,
+      widthOverflowAllowed: true,
     },
     backgroundPlanePosition,
     selectedHotspotId,
@@ -544,6 +542,7 @@ export function createPage2Model({
     },
     hide() {
       activePointers.clear()
+      entranceRequested = false
       entranceActive = false
       setVisible(modelRoot, false)
       setVisible(hotspotRoot, false)

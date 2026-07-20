@@ -34,11 +34,13 @@ const resolvePage2Config = (config) => {
     ...source,
     assets: { ...PAGE2_CONFIG.assets, ...(source.assets || {}) },
     background: { ...PAGE2_CONFIG.background, ...(source.background || {}) },
+    intro: { ...PAGE2_CONFIG.intro, ...(source.intro || {}) },
     map: { ...PAGE2_CONFIG.map, ...(source.map || {}) },
     mainVisual: { ...PAGE2_CONFIG.mainVisual, ...(source.mainVisual || {}) },
     fireEntryHotspot: { ...PAGE2_CONFIG.fireEntryHotspot, ...(source.fireEntryHotspot || {}) },
     floorBase: { ...PAGE2_CONFIG.floorBase, ...(source.floorBase || {}) },
     rescanReplay: { ...PAGE2_CONFIG.rescanReplay, ...(source.rescanReplay || {}) },
+    mindar: { ...PAGE2_CONFIG.mindar, ...(source.mindar || {}) },
     spatial: { ...PAGE2_CONFIG.spatial, ...(source.spatial || {}) },
     model: { ...PAGE2_CONFIG.model, ...(source.model || {}) },
     hotspots: { ...PAGE2_CONFIG.hotspots, ...(source.hotspots || {}) },
@@ -99,15 +101,23 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
         <a-entity id="page2-intro-root">
           ${fullLayer('page2-intro-dragon-asset', 'intro-line', 'introDragon')}
           ${fullLayer('page2-intro-text-asset', 'intro-text', 'introText')}
+          <a-entity id="page2-intro-dragon-glow">
+            <a-circle data-page2-glow-soft radius="${config.intro.dragonGlowRadius}"
+              material="shader: flat; color: #c84624; transparent: true; opacity: 0; depthWrite: false; side: double"></a-circle>
+            <a-ring data-page2-glow-ring radius-inner="${config.intro.dragonGlowRadius * 0.64}" radius-outer="${config.intro.dragonGlowRadius * 0.72}"
+              material="shader: flat; color: #ef8742; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
+          </a-entity>
         </a-entity>
         <a-entity id="page2-map-root">
           ${fullLayer('page2-map-main-asset', 'map-main', 'mapMain')}
           ${fullLayer('page2-map-text-asset', 'map-text', 'mapText')}
-          <a-image id="page2-map-tongliang" data-page2-layer="map-tongliang" data-page2-asset-key="mapTongliang"
-            width="${config.map.tongliangWidth}" height="${config.map.tongliangHeight}"
-            material="shader: flat; transparent: true; depthWrite: false"></a-image>
-          <a-ring id="page2-map-tongliang-pulse" radius-inner=".008" radius-outer=".011"
-            material="shader: flat; color: #ffb745; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
+          ${fullLayer('page2-map-tongliang-asset', 'map-tongliang', 'mapTongliang')}
+          <a-entity id="page2-map-tongliang-glow">
+            <a-circle data-page2-glow-soft radius="${config.map.tongliangGlowRadius}"
+              material="shader: flat; color: #ff8a28; transparent: true; opacity: 0; depthWrite: false; side: double"></a-circle>
+            <a-ring data-page2-glow-ring radius-inner="${config.map.tongliangGlowRadius * 0.52}" radius-outer="${config.map.tongliangGlowRadius * 0.72}"
+              material="shader: flat; color: #ffd56a; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
+          </a-entity>
         </a-entity>
         <a-entity id="page2-main-visual-root">
           ${fullLayer('page2-main-base-asset', 'main-base', 'mainBase')}
@@ -119,9 +129,13 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
           ${fullLayer('page2-main-performers-asset', 'main-performers', 'mainPerformers')}
           ${fullLayer('page2-main-dancers-asset', 'main-dancers', 'mainDancers')}
           ${fullLayer('page2-main-dragon-asset', 'main-dragon', 'mainDragon')}
-          <a-image id="page2-main-pearl" data-page2-layer="main-pearl" data-page2-asset-key="mainPearl"
-            width="${config.mainVisual.pearlWidth}" height="${config.mainVisual.pearlHeight}"
-            material="shader: flat; transparent: true; alphaTest: .005; depthWrite: false"></a-image>
+          ${fullLayer('page2-main-pearl-asset', 'main-pearl', 'mainPearl')}
+          <a-entity id="page2-main-pearl-glow">
+            <a-circle data-page2-glow-soft radius="${config.mainVisual.pearlGlowRadius}"
+              material="shader: flat; color: #ff7a20; transparent: true; opacity: 0; depthWrite: false; side: double"></a-circle>
+            <a-ring data-page2-glow-ring radius-inner="${config.mainVisual.pearlGlowRadius * 0.46}" radius-outer="${config.mainVisual.pearlGlowRadius * 0.64}"
+              material="shader: flat; color: #ffe37b; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
+          </a-entity>
         </a-entity>
         <a-entity id="page2-types-root">
           ${fullLayer('page2-types-title-asset', 'types-title', 'typesTitle')}
@@ -136,6 +150,13 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
         </a-entity>
         <a-plane id="page2-fire-entry-hit" width="${width * fire.width}" height="${height * fire.height}"
           material="shader: flat; transparent: true; opacity: .001; depthWrite: false; side: double"></a-plane>
+        <a-entity id="page2-fire-entry-cue" visible="false">
+          <a-ring data-page2-fire-cue-ring radius-inner="${Math.min(width * fire.width, height * fire.height) * 0.34}"
+            radius-outer="${Math.min(width * fire.width, height * fire.height) * 0.37}"
+            material="shader: flat; color: #ffb245; transparent: true; opacity: .72; depthWrite: false; side: double"></a-ring>
+          <a-circle data-page2-fire-cue-dot radius=".012"
+            material="shader: flat; color: #ffe39a; transparent: true; opacity: .92; depthWrite: false; side: double"></a-circle>
+        </a-entity>
         <a-ring id="page2-entry-ripple" radius-inner=".02" radius-outer=".025" visible="false"
           material="shader: flat; color: #ff9d31; transparent: true; opacity: 0; depthWrite: false; side: double"></a-ring>
         <a-entity id="page2-debug-ring-center" visible="${debug}">
@@ -175,18 +196,20 @@ export const page2UiMarkup = (config, debug = false) => `
   <section id="page2-loading-status" class="page2-loading-status" role="status" aria-live="polite">
     <span class="page2-loading-emblem" aria-hidden="true"></span>
     <div class="page2-loading-copy">
-      <strong>正在准备龙脉图景</strong>
+      <strong>《龙脉铜梁》</strong>
+      <span>——铜梁火龙非遗AR互动体验设计</span>
       <small data-page2-loading-detail>正在加载空间背景</small>
     </div>
     <div class="page2-loading-track" aria-hidden="true"><i data-page2-loading-progress></i></div>
-    <span data-page2-loading-count>已准备 0 / 22</span>
+    <span data-page2-loading-count>${debug ? 'decoded 0 / 22' : '正在准备'}</span>
   </section>
+  <p class="page2-scan-guide" role="status">请缓慢平放识别图体验更佳</p>
   <section class="page2-ui" aria-label="龙脉探源 AR 界面">
     <header class="page2-title"><span>02</span><h1>龙脉探源</h1></header>
     <section class="page2-guide page2-glass-card" role="status" hidden>
-      <strong>识别成功｜龙脉探源</strong><p>请保持识别图平放，缓慢抬起手机观看</p>
+      <strong>识别成功｜龙脉探源</strong><p>请抬起手机，与识别图保持垂直</p>
     </section>
-    <p class="page2-overview-hint" role="status" hidden>点击火龙，进入模型探索</p>
+    <p class="page2-overview-hint" role="status" hidden>点击进入火龙探索</p>
     <nav class="page2-model-controls" hidden>
       <button type="button" data-page2-action="overview">返回总览</button>
       <button type="button" data-page2-action="reset">复位</button>
@@ -212,6 +235,8 @@ export const page2UiMarkup = (config, debug = false) => `
     <strong>Page 2 Debug</strong>
     <p>状态 <b data-page2-debug-state>${PAGE2_STATES.HIDDEN}</b></p>
     <p>targetIndex <b>${config.targetIndex}</b>｜FPS <b data-page2-debug-fps>0</b></p>
+    <p>MindAR warmup <b>${config.mindar.warmupTolerance}</b>｜miss <b>${config.mindar.missTolerance}</b></p>
+    <p>filterMinCF <b>${config.mindar.filterMinCF}</b>｜beta <b>${config.mindar.filterBeta}</b></p>
     <p>all settled <b data-page2-debug-assets>false</b>｜background <b data-page2-debug-background>false</b></p>
     <p>critical assets <b data-page2-debug-critical>false</b>｜tracking stable <b data-page2-debug-stable>false</b></p>
     <p>entrance <b data-page2-debug-entrance>false</b>｜progress <b data-page2-debug-progress>0%</b></p>
@@ -268,6 +293,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   const fireHit = root.querySelector('#page2-fire-entry-hit')
   const ripple = root.querySelector('#page2-entry-ripple')
   const guide = root.querySelector('.page2-guide')
+  const guideTitle = guide.querySelector('strong')
   const guideText = guide.querySelector('p')
   const overviewHint = root.querySelector('.page2-overview-hint')
   const modelControls = root.querySelector('.page2-model-controls')
@@ -537,14 +563,9 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     setHtmlVisible(completeCard, false)
     setHtmlVisible(overviewHint, false)
     setHtmlVisible(guide, true)
-    guideText.textContent = page2Runtime.scanSessionId > 1 ? '正在重新展开龙脉图景' : '正在展开龙脉图景'
+    guideTitle.textContent = page2Runtime.scanSessionId > 1 ? '再次识别｜龙脉探源' : '识别成功｜龙脉探源'
+    guideText.textContent = '请抬起手机，与识别图保持垂直'
     window.clearTimeout(replayGuideTimer)
-    if (page2Runtime.scanSessionId > 1) {
-      const currentRunId = page2Runtime.entranceRunId
-      replayGuideTimer = window.setTimeout(() => {
-        if (tracked && currentRunId === page2Runtime.entranceRunId) setHtmlVisible(guide, false)
-      }, 420)
-    }
     debugLog('page2EntranceReset', { scanSessionId: page2Runtime.scanSessionId, runId: page2Runtime.entranceRunId })
     updateReadinessDebug()
   }
@@ -615,7 +636,11 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     overview.startEntry()
     entranceTimelineActive = true
     entranceAnimationFinished = false
-    if (page2Runtime.scanSessionId <= 1) setHtmlVisible(guide, false)
+    window.clearTimeout(replayGuideTimer)
+    const guideRunId = page2Runtime.entranceRunId
+    replayGuideTimer = window.setTimeout(() => {
+      if (tracked && guideRunId === page2Runtime.entranceRunId) setHtmlVisible(guide, false)
+    }, Math.max(720, config.background.openDuration * 0.82))
     debugLog('page2BackgroundEntranceStarted', { runId: currentRunId })
   }
 
@@ -632,7 +657,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     page2EntranceProgress = 0
     backgroundElapsed = 0
     floorBase.start(currentRunId)
-    guideText.textContent = page2Runtime.backgroundReady ? '正在展开龙脉图景' : '识别成功，正在展开龙脉图景'
+    guideText.textContent = '请抬起手机，与识别图保持垂直'
     setState(PAGE2_STATES.OVERVIEW_ENTERING)
     updateReadinessDebug()
     afterTwoAnimationFrames(() => {
@@ -760,15 +785,17 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   const unsubscribePreload = preloadSession.subscribe((snapshot) => {
     page2Runtime.resourcesLoaded = snapshot.resourcesLoaded
     page2Runtime.allAssetsSettled = snapshot.settledCount === snapshot.totalCount
-    if (tracked && page2Runtime.entranceStarted && !page2Runtime.backgroundReady) {
-      guideText.textContent = '识别成功，正在展开龙脉图景'
-    }
     updateReadinessDebug()
   })
 
   const activate = ({ replay = page2Runtime.replayArmed } = {}) => {
     const lostDuration = page2Runtime.lostStartedAt ? performance.now() - page2Runtime.lostStartedAt : 0
-    debugLog('targetFound', { replay, lostDuration })
+    debugLog('targetFound', {
+      replay,
+      lostDuration,
+      at: Math.round(performance.now()),
+      nextSession: replay ? page2Runtime.scanSessionId + 1 : page2Runtime.scanSessionId,
+    })
     suspended = false
     tracked = true
     page2Runtime.targetVisible = true
@@ -799,7 +826,11 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
 
   const loseTracking = () => {
     if (!tracked) return
-    debugLog('targetLost', { state })
+    debugLog('targetLost', {
+      state,
+      at: Math.round(performance.now()),
+      replayThresholdMs: config.rescanReplay.lostThresholdMs,
+    })
     tracked = false
     page2Runtime.targetVisible = false
     page2Runtime.lostStartedAt = performance.now()
@@ -815,7 +846,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     setHtmlVisible(completeCard, false)
     enableModelUi(false)
     setHtmlVisible(overviewHint, false)
-    setHtmlVisible(lostNotice, true)
+    setHtmlVisible(lostNotice, false)
     updateReadinessDebug()
   }
 
@@ -835,7 +866,11 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     model.hide()
     particles.hide()
     setHtmlVisible(overviewHint, false)
-    debugLog('page2ReplayArmed', { lostDuration, runId: page2Runtime.entranceRunId })
+    debugLog('page2ReplayArmed', {
+      lostDuration: Math.round(lostDuration),
+      thresholdMs: config.rescanReplay.lostThresholdMs,
+      runId: page2Runtime.entranceRunId,
+    })
     updateReadinessDebug()
   }
 
@@ -843,13 +878,18 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     target,
     lostDelayMs: config.rescanReplay.lostThresholdMs,
     signal,
-    onFound({ firstFound }) {
+    onFound({ firstFound, foundCount, lostCount }) {
+      debugLog('targetFoundEvent', { firstFound, foundCount, lostCount, at: Math.round(performance.now()) })
       const shouldReplay = firstFound
         || (page2Runtime.replayArmed && config.rescanReplay.enabled && config.rescanReplay.replayFullEntrance)
       activate({ replay: shouldReplay })
     },
-    onLost: loseTracking,
-    onLostConfirmed: () => {
+    onLost(data) {
+      debugLog('targetLostEvent', { ...data, at: Math.round(performance.now()) })
+      loseTracking()
+    },
+    onLostConfirmed: (data) => {
+      debugLog('targetLostConfirmed', { ...data, thresholdMs: config.rescanReplay.lostThresholdMs })
       confirmReplayAfterLoss()
       setHtmlVisible(lostNotice, true)
     },
@@ -934,8 +974,11 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       else stableElapsed = 0
       if (!page2Runtime.trackingStable && stableElapsed >= config.rescanReplay.stableDelayMs) {
         page2Runtime.trackingStable = true
-        debugLog('page2TrackingStable', true)
-        guideText.textContent = '视角已就绪'
+        debugLog('page2TrackingStable', {
+          stableElapsed: Math.round(stableElapsed),
+          requiredMs: config.rescanReplay.stableDelayMs,
+          at: Math.round(performance.now()),
+        })
         updateReadinessDebug()
         maybeStartPage2Entrance()
       }

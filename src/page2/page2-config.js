@@ -51,8 +51,24 @@ const layerKeys = [
   'timeline-texts',
 ]
 
+const mainDepthOffsetsMm = Object.freeze({
+  'main-base': 0,
+  'main-ring': 10,
+  'main-scene': 22,
+  'main-sparks': 35,
+  'main-performers': 48,
+  'main-dancers': 63,
+  'main-dragon': 79,
+  'main-pearl': 96,
+})
+
+const mainBaseDepthMm = spatial.backSafetyMm + layerKeys.indexOf('main-base') * spatial.layerStepMm
+
 const layers = layerKeys.map((key, layerIndex) => {
-  const depthMm = spatial.backSafetyMm + layerIndex * spatial.layerStepMm
+  const defaultDepthMm = spatial.backSafetyMm + layerIndex * spatial.layerStepMm
+  const depthMm = Object.prototype.hasOwnProperty.call(mainDepthOffsetsMm, key)
+    ? mainBaseDepthMm + mainDepthOffsetsMm[key]
+    : defaultDepthMm
   return {
     key,
     layerIndex,
@@ -89,8 +105,14 @@ export const PAGE2_CONFIG = {
   rescanReplay: {
     enabled: true,
     lostThresholdMs: 800,
-    stableDelayMs: 250,
+    stableDelayMs: 180,
     replayFullEntrance: true,
+  },
+  mindar: {
+    warmupTolerance: 2,
+    missTolerance: 12,
+    filterMinCF: 0.0007,
+    filterBeta: 180,
   },
   assets: {
     background: page2Asset('background/page2-bg-full.png'),
@@ -124,8 +146,8 @@ export const PAGE2_CONFIG = {
     positionDeadzone: 0.002,
     rotationDeadzoneDeg: 0.35,
     scaleDeadzone: 0.001,
-    lostHoldDuration: 250,
-    recoverDuration: 300,
+    lostHoldDuration: 850,
+    recoverDuration: 260,
   },
   background: {
     width: 1.02,
@@ -147,14 +169,13 @@ export const PAGE2_CONFIG = {
     restoreDuration: 520,
   },
   map: {
-    tongliangX: 0.783,
-    tongliangY: 0.295,
-    tongliangOffsetX: -0.03,
+    tongliangX: 0.6503125,
+    tongliangY: 0.318125,
+    tongliangOffsetX: 0,
     tongliangOffsetY: 0,
-    tongliangWidth: 0.02,
-    tongliangHeight: 0.02,
-    tongliangPulseScale: 1.52,
-    tongliangPulseDuration: 2800,
+    tongliangGlowRadius: 0.022,
+    tongliangPulseScale: 1.38,
+    tongliangPulseDuration: 2600,
   },
   mainVisual: {
     ringCenterX: 0.3162,
@@ -162,13 +183,21 @@ export const PAGE2_CONFIG = {
     ringWidth: 0.5387,
     ringHeight: 0.5521,
     ringRotationSeconds: 40,
-    pearlCenterX: 0.316,
-    pearlCenterY: 0.446,
-    pearlWidth: 0.102,
-    pearlHeight: 0.112,
-    dancersAmplitude: 0.0025,
-    dragonAmplitude: 0.004,
-    pearlAmplitude: 0.005,
+    pearlCenterX: 0.0365625,
+    pearlCenterY: 0.435,
+    pearlGlowRadius: 0.052,
+    performersAmplitude: 0.0018,
+    sceneAmplitude: 0.0008,
+    dancersMotionAmplitude: 0.0048,
+    dragonMotionAmplitude: 0.008,
+    pearlMotionAmplitude: 0.0085,
+    depthOffsetsMm: mainDepthOffsetsMm,
+  },
+  intro: {
+    dragonGlowCenterX: 0.38125,
+    dragonGlowCenterY: 0.252292,
+    dragonGlowRadius: 0.115,
+    pulseDuration: 3000,
   },
   types: {
     row1: { scale: 0.92, offsetY: 0.012 },
@@ -182,21 +211,21 @@ export const PAGE2_CONFIG = {
     height: 0.24,
   },
   model: {
-    centerDepthMm: 105,
-    centerDepthUnit: 105 / 148,
-    bottomClearanceMm: 15,
-    bottomClearanceUnit: 15 / 148,
+    centerDepthMm: 40.73,
+    centerDepthUnit: 40.73 / 148,
+    bottomClearanceMm: 4,
+    bottomClearanceUnit: 4 / 148,
     backLimitMm: 20,
     backLimitUnit: 20 / 148,
     frontLimitMm: 190,
     frontLimitUnit: 190 / 148,
-    targetWidthRatio: 0.85,
-    defaultRotation: { x: 0, y: 0, z: 0 },
-    entranceRotation: { x: 5, y: -7, z: -4 },
-    entranceScale: 0.9,
-    entranceRiseUnit: 0.12,
-    minScale: 0.65,
-    maxScale: 1.45,
+    targetWidthRatio: 2.55,
+    defaultRotation: { x: 72, y: -8, z: -10 },
+    entranceRotation: { x: 54, y: -18, z: -18 },
+    entranceScale: 0.72,
+    entranceRiseUnit: 0.48,
+    minScale: 0.45,
+    maxScale: 2.6,
     entranceDuration: 3300,
     dragSensitivity: 0.34,
     pinchSensitivity: 1,
@@ -207,6 +236,7 @@ export const PAGE2_CONFIG = {
     foregroundRatio: 0.18,
     middleRatio: 0.55,
     modelPeakTime: 0.58,
+    sizeScale: 1.9,
   },
   performance: { maxPixelRatio: 1.75 },
   hotspots: { radius: 0.004, ringRadius: 0.0065, minimumViewed: 3 },

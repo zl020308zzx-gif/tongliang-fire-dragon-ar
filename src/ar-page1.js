@@ -70,6 +70,9 @@ export function renderArPage1(root) {
     : null
   const page2Debug = params.get('debug') === '1'
   const page2Entry = params.get('ar') === 'page2'
+  const page2MindarTuning = page2Entry
+    ? `; warmupTolerance: ${PAGE2_CONFIG.mindar.warmupTolerance}; missTolerance: ${PAGE2_CONFIG.mindar.missTolerance}; filterMinCF: ${PAGE2_CONFIG.mindar.filterMinCF}; filterBeta: ${PAGE2_CONFIG.mindar.filterBeta}`
+    : ''
   const aspect = config.ar.markerAspectFallback
   const panelConfig = config.ar.arPanel
   const initialPanelMode = panelConfig.modes.vertical
@@ -112,7 +115,7 @@ export function renderArPage1(root) {
         <div class="page2-preload-assets">${page2Assets}</div>
       </div>
       <a-scene id="page1-ar-scene" class="preview-scene ar-scene" embedded
-        mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no"
+        mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no${page2MindarTuning}"
         renderer="antialias: true; colorManagement: true; alpha: true"
         vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false"
         loading-screen="enabled: false">
@@ -205,9 +208,9 @@ export function renderArPage1(root) {
       </section>
 
       <section class="ar-start-screen ar-overlay-card">
-        <span>铜梁火龙 · ${page2Entry ? '第二页' : '第一页'}</span>
-        <h2>${page2Entry ? '扫描识别卡，开启龙文化探索' : '扫描识别卡，唤醒竹骨成龙工艺'}</h2>
-        <p>${page2Entry ? '需要使用摄像头识别《龙脉探源》卡片。' : '需要使用摄像头识别竹骨燃龙卡片。'}</p>
+        <span>${page2Entry ? '《龙脉铜梁》' : '铜梁火龙 · 第一页'}</span>
+        <h2>${page2Entry ? '——铜梁火龙非遗AR互动体验设计' : '扫描识别卡，唤醒竹骨成龙工艺'}</h2>
+        <p>${page2Entry ? '开启摄像头后，请缓慢平放第二页识别图。' : '需要使用摄像头识别竹骨燃龙卡片。'}</p>
         <button type="button" data-ar-action="start">开启AR体验</button>
       </section>
       <p class="ar-scan-status" role="status" hidden>请扫描竹骨燃龙识别卡</p>
