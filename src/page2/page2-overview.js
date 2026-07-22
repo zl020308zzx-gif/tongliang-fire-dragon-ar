@@ -40,7 +40,17 @@ const setVisible = (entity, visible) => {
   entity.setAttribute('visible', visible)
 }
 
-export function createPage2Overview({ root, config, onModuleEnter, onEntryComplete, onExitComplete, onRestoreComplete }) {
+export function createPage2Overview({
+  root,
+  config,
+  isLiteMode = () => false,
+  onModulePrepare,
+  onModuleEnter,
+  onModuleVisible,
+  onEntryComplete,
+  onExitComplete,
+  onRestoreComplete,
+}) {
   const THREE = window.AFRAME.THREE
   const overviewRoot = root.querySelector('#page2-overview-root')
   const groups = {
@@ -111,7 +121,10 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
   let mode = 'hidden'
   let elapsed = 0
   let continuousElapsed = 0
+  let continuousAccumulator = 0
   const activeModules = new Set()
+  const preparedModules = new Set()
+  const visibleModules = new Set()
 
   const layerConfig = (key) => config.layers.find((layer) => layer.key === key)
   const rotatedPoint = (depthUnit, localX = 0, localY = 0, label = 'layer') => new THREE.Vector3(
@@ -284,11 +297,22 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
   const enterTypesModule = () => enterModule('types')
   const enterTimelineModule = () => enterModule('timeline')
 
+  const prepareModule = (moduleName) => {
+    if (preparedModules.has(moduleName)) return false
+    preparedModules.add(moduleName)
+    onModulePrepare?.(moduleName, moduleStartTimes[moduleName])
+    return true
+  }
+
   const activateAllModules = () => {
     Object.keys(moduleLayers).forEach((moduleName) => enterModule(moduleName))
   }
 
   const runOverviewSequence = () => {
+    Object.entries(moduleStartTimes).forEach(([moduleName, startAt]) => {
+      const prepareAt = Math.max(0, startAt - sequence.modulePrepareLeadMs)
+      if (elapsed >= prepareAt) prepareModule(moduleName)
+    })
     if (elapsed >= moduleStartTimes.initial) enterFloorBackgroundTitleAndMain()
     if (elapsed >= moduleStartTimes.intro) enterIntroModule()
     if (elapsed >= moduleStartTimes.map) enterMapModule()
@@ -308,6 +332,12 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
       if (layer.key.startsWith('types-')) options.scaleFrom = Math.max(0.9, finalPoses.get(layer.key)?.scale - 0.07)
       if (layer.key.startsWith('timeline-')) options.up = -0.035
       setLayerPose(layer.key, p, options)
+      const moduleName = layerModule.get(layer.key)
+      const isRepresentativeLayer = moduleName !== 'initial' || layer.key.startsWith('main-')
+      if (p > 0.01 && isRepresentativeLayer && !visibleModules.has(moduleName) && entities.get(layer.key)?.object3D.visible !== false) {
+        visibleModules.add(moduleName)
+        onModuleVisible?.(moduleName, layer.key, elapsed)
+      }
     })
     if (activeModules.has('map')) {
       const tongliang = layerProgress(layerConfig('map-tongliang'))
@@ -342,6 +372,10 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
   }
 
   const applyContinuous = (delta) => {
+    continuousAccumulator += delta
+    if (isLiteMode() && continuousAccumulator < config.performance.liteAnimationFrameMs) return
+    delta = continuousAccumulator
+    continuousAccumulator = 0
     continuousElapsed += delta
     const seconds = continuousElapsed / 1000
     if (activeModules.has('initial')) {
@@ -383,7 +417,8 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
       moveOnBoard(pearlGlow, { position: decorationPoses.get(pearlGlow.id) }, pearlMotion)
       pearl.object3D.scale.setScalar(1)
       setOpacity(pearl, 0.84 + pearlPulse * 0.16)
-      setGlow(pearlGlow, 0.06 + pearlPulse * 0.13, 0.12 + pearlPulse * 0.28, 0.94 + pearlPulse * 0.12)
+      if (isLiteMode()) setGlow(pearlGlow, 0.05 + pearlPulse * 0.08, 0, 1)
+      else setGlow(pearlGlow, 0.06 + pearlPulse * 0.13, 0.12 + pearlPulse * 0.28, 0.94 + pearlPulse * 0.12)
       setOpacity(entities.get('main-sparks'), 0.9 + Math.sin(seconds * 1.05) * 0.04)
     }
 
@@ -396,19 +431,19 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
       const mapPulseValue = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
       mapPoint.object3D.scale.setScalar(1)
       setOpacity(mapPoint, 0.72 + mapPulseValue * 0.28)
-      setGlow(mapGlow, 0.08 + mapPulseValue * 0.13, 0.2 + (1 - mapPulseValue) * 0.42, 1 + mapPulseValue * (config.map.tongliangPulseScale - 1))
+      if (isLiteMode()) setGlow(mapGlow, 0.06 + mapPulseValue * 0.1, 0, 1)
+      else setGlow(mapGlow, 0.08 + mapPulseValue * 0.13, 0.2 + (1 - mapPulseValue) * 0.42, 1 + mapPulseValue * (config.map.tongliangPulseScale - 1))
     }
 
     if (activeModules.has('intro') && moduleSettled('intro')) {
       const introLine = entities.get('intro-line')
       const introPulse = (Math.sin((seconds * Math.PI * 2) / (config.intro.pulseDuration / 1000) + 0.45) + 1) * 0.5
       setOpacity(introLine, 0.8 + introPulse * 0.2)
-      setGlow(introGlow, 0.045 + introPulse * 0.085, 0.09 + introPulse * 0.17, 0.98 + introPulse * 0.05)
+      if (isLiteMode()) setGlow(introGlow, 0.04 + introPulse * 0.07, 0, 1)
+      else setGlow(introGlow, 0.045 + introPulse * 0.085, 0.09 + introPulse * 0.17, 0.98 + introPulse * 0.05)
     }
 
     if (mode === 'overview') {
-      setVisible(fireHit, true)
-      setVisible(fireCue, true)
       const cuePulse = (Math.sin(seconds * Math.PI * 1.35) + 1) * 0.5
       fireCue.object3D.scale.setScalar(0.96 + cuePulse * 0.1)
       setOpacity(fireCue.querySelector('[data-page2-fire-cue-ring]'), 0.32 + cuePulse * 0.42)
@@ -419,6 +454,12 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
       value.elapsed += delta
       const p = easeOutCubic(value.elapsed / 700)
       setLayerPose(key, p)
+      const moduleName = layerModule.get(key)
+      const isRepresentativeLayer = moduleName !== 'initial' || key.startsWith('main-')
+      if (p > 0.01 && isRepresentativeLayer && !visibleModules.has(moduleName)) {
+        visibleModules.add(moduleName)
+        onModuleVisible?.(moduleName, key, elapsed)
+      }
       if (p >= 1) lateReveals.delete(key)
     })
   }
@@ -444,8 +485,11 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
     mode = 'prepared'
     elapsed = 0
     continuousElapsed = 0
+    continuousAccumulator = 0
     lateReveals.clear()
     activeModules.clear()
+    preparedModules.clear()
+    visibleModules.clear()
     setVisible(overviewRoot, true)
     Object.values(groups).forEach((group) => {
       group.object3D.position.set(0, 0, 0)
@@ -496,7 +540,7 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
           if (object.material && layer) object.renderOrder = layer.renderOrder
         })
         readyAtElapsed.set(key, mode === 'entering' ? elapsed : 0)
-        if (mode === 'overview') lateReveals.set(key, { elapsed: 0 })
+        if (['awaiting-completion', 'overview'].includes(mode)) lateReveals.set(key, { elapsed: 0 })
       })
       return true
     },
@@ -504,6 +548,7 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
     startEntry() {
       resetEntry()
       mode = 'entering'
+      prepareModule('initial')
       enterFloorBackgroundTitleAndMain()
     },
     startExit() {
@@ -532,12 +577,12 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
         applyEntry()
         if (elapsed >= config.overviewSequence.mainAnimationStartDelayMs) applyContinuous(delta)
         if (elapsed >= sequenceCompleteAt) {
-          mode = 'overview'
+          mode = 'awaiting-completion'
           activateAllModules()
           applyFinal()
           onEntryComplete?.()
         }
-      } else if (mode === 'overview') applyContinuous(delta)
+      } else if (['awaiting-completion', 'overview'].includes(mode)) applyContinuous(delta)
       else if (mode === 'exiting') {
         applyExit()
         if (elapsed >= config.overview.exitDuration) {
@@ -555,6 +600,14 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
           onRestoreComplete?.()
         }
       }
+    },
+    completeEntrance() {
+      if (mode !== 'awaiting-completion') return false
+      mode = 'overview'
+      applyFinal()
+      setVisible(fireHit, true)
+      setVisible(fireCue, true)
+      return true
     },
     hide() { mode = 'hidden'; setVisible(fireHit, false); setVisible(fireCue, false); setVisible(overviewRoot, false) },
     showFinal() { mode = 'overview'; activateAllModules(); setVisible(overviewRoot, true); applyFinal(); setVisible(fireHit, true); setVisible(fireCue, true) },
@@ -600,14 +653,16 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
         strongLayerCount: new Set(strongLayers).size,
       }
     },
-    getProgress: () => mode === 'entering' ? clamp01(elapsed / sequenceCompleteAt) : mode === 'overview' ? 1 : 0,
+    getProgress: () => mode === 'entering' ? clamp01(elapsed / sequenceCompleteAt) : ['awaiting-completion', 'overview'].includes(mode) ? 1 : 0,
     getDebugState: () => ({
       mode,
-      progress: mode === 'entering' ? clamp01(elapsed / sequenceCompleteAt) : mode === 'overview' ? 1 : 0,
+      progress: mode === 'entering' ? clamp01(elapsed / sequenceCompleteAt) : ['awaiting-completion', 'overview'].includes(mode) ? 1 : 0,
       sequenceElapsedMs: Math.round(elapsed),
       sequenceCompleteAtMs: sequenceCompleteAt,
       moduleStartTimes: { ...moduleStartTimes },
       activeModules: [...activeModules],
+      preparedModules: [...preparedModules],
+      visibleModules: [...visibleModules],
       rearEdgeOrigin: [0, rearEdgeY, 0],
       cardFrontEdge: [0, rearEdgeY - config.spatial.cardDepthUnit, 0],
       readyAssets: [...readyAssets],
@@ -616,6 +671,6 @@ export function createPage2Overview({ root, config, onModuleEnter, onEntryComple
         position: entities.get(layer.key)?.object3D.position.toArray() || null,
       })),
     }),
-    destroy() { mode = 'hidden'; activeModules.clear(); lateReveals.clear() },
+    destroy() { mode = 'hidden'; activeModules.clear(); preparedModules.clear(); visibleModules.clear(); lateReveals.clear() },
   }
 }
