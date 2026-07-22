@@ -148,7 +148,7 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
           ${fullLayer('page2-timeline-nodes-asset', 'timeline-nodes', 'timelineNodes')}
           ${fullLayer('page2-timeline-texts-asset', 'timeline-texts', 'timelineTexts')}
         </a-entity>
-        <a-plane id="page2-fire-entry-hit" width="${width * fire.width}" height="${height * fire.height}"
+        <a-plane id="page2-fire-entry-hit" visible="false" width="${width * fire.width}" height="${height * fire.height}"
           material="shader: flat; transparent: true; opacity: .001; depthWrite: false; side: double"></a-plane>
         <a-entity id="page2-fire-entry-cue" visible="false">
           <a-ring data-page2-fire-cue-ring radius-inner="${Math.min(width * fire.width, height * fire.height) * 0.34}"
@@ -454,6 +454,10 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   overview = createPage2Overview({
     root,
     config,
+    onModuleEnter(moduleName, scheduledAtMs) {
+      loadModuleAssets(moduleName)
+      debugLog('page2OverviewModuleEnter', { moduleName, scheduledAtMs, runId: page2Runtime.entranceRunId })
+    },
     onEntryComplete() {
       page2EntranceProgress = 1
       entranceTimelineActive = false
@@ -710,8 +714,9 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       throw new Error(`[page2] No real layer entity for asset: ${key}`)
     }
     entitiesForAsset.forEach((entity) => {
-      entity.setAttribute('visible', true)
-      entity.object3D.visible = true
+      const visibleWhileBinding = key === 'background'
+      entity.setAttribute('visible', visibleWhileBinding)
+      entity.object3D.visible = visibleWhileBinding
       entity.setAttribute('material', 'opacity', key === 'background' ? 1 : 0)
       entity.setAttribute('src', `#${id}`)
     })
@@ -771,10 +776,26 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     return promise
   }
 
+  const moduleAssetKeys = Object.freeze({
+    initial: ['title', 'mainBase', 'mainRing', 'mainScene', 'mainSparks', 'mainPerformers', 'mainDancers', 'mainDragon', 'mainPearl'],
+    intro: ['introDragon', 'introText'],
+    map: ['mapMain', 'mapText', 'mapTongliang'],
+    types: ['typesTitle', 'typesBack', 'typesMid', 'typesFront'],
+    timeline: ['timelineBase', 'timelineNodes', 'timelineTexts'],
+  })
+
+  const loadModuleAssets = (moduleName) => {
+    const keys = moduleAssetKeys[moduleName] || []
+    return Promise.allSettled(keys.map((key) => loadAsset(key)))
+  }
+
   const startAssetLoading = () => {
     if (assetLoadingPromise || destroyed) return assetLoadingPromise
     assetLoadingPromise = (async () => {
-      const results = await Promise.allSettled(assetEntries.map(([, key]) => loadAsset(key)))
+      const results = await Promise.allSettled([
+        loadAsset('background'),
+        ...moduleAssetKeys.initial.map((key) => loadAsset(key)),
+      ])
       updateAssetReadiness()
       return results
     })()
@@ -897,7 +918,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   })
 
   const getFireHit = (clientX, clientY) => {
-    if (!scene.camera || !scene.canvas) return false
+    if (state !== PAGE2_STATES.OVERVIEW || fireHit.object3D.visible === false || !scene.camera || !scene.canvas) return false
     const rect = scene.canvas.getBoundingClientRect()
     pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
     raycaster.setFromCamera(pointer, scene.camera)

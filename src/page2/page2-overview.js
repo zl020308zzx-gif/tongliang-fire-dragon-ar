@@ -40,7 +40,7 @@ const setVisible = (entity, visible) => {
   entity.setAttribute('visible', visible)
 }
 
-export function createPage2Overview({ root, config, onEntryComplete, onExitComplete, onRestoreComplete }) {
+export function createPage2Overview({ root, config, onModuleEnter, onEntryComplete, onExitComplete, onRestoreComplete }) {
   const THREE = window.AFRAME.THREE
   const overviewRoot = root.querySelector('#page2-overview-root')
   const groups = {
@@ -51,6 +51,30 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     types: root.querySelector('#page2-types-root'),
     timeline: root.querySelector('#page2-timeline-root'),
   }
+  const moduleLayers = Object.freeze({
+    initial: ['title', 'main-base', 'main-ring', 'main-scene', 'main-sparks', 'main-performers', 'main-dancers', 'main-dragon', 'main-pearl'],
+    intro: ['intro-line', 'intro-text'],
+    map: ['map-main', 'map-text', 'map-tongliang'],
+    types: ['types-title', 'types-back', 'types-mid', 'types-front'],
+    timeline: ['timeline-base', 'timeline-nodes', 'timeline-texts'],
+  })
+  const moduleGroups = Object.freeze({
+    initial: [groups.title, groups.main],
+    intro: [groups.intro],
+    map: [groups.map],
+    types: [groups.types],
+    timeline: [groups.timeline],
+  })
+  const layerModule = new Map(Object.entries(moduleLayers).flatMap(([moduleName, keys]) => keys.map((key) => [key, moduleName])))
+  const sequence = config.overviewSequence
+  const moduleStartTimes = Object.freeze({
+    initial: 0,
+    intro: sequence.moduleIntervalMs,
+    map: sequence.moduleIntervalMs * 2,
+    types: sequence.moduleIntervalMs * 3,
+    timeline: sequence.moduleIntervalMs * 4,
+  })
+  const sequenceCompleteAt = moduleStartTimes.timeline + sequence.finalPromptDelayMs
   const entities = new Map(config.layers.map((layer) => [layer.key, root.querySelector(`[data-page2-layer="${layer.key}"]`)]))
   const layerElements = [...entities.values()].filter(Boolean)
   const layersByAsset = new Map()
@@ -87,6 +111,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
   let mode = 'hidden'
   let elapsed = 0
   let continuousElapsed = 0
+  const activeModules = new Set()
 
   const layerConfig = (key) => config.layers.find((layer) => layer.key === key)
   const rotatedPoint = (depthUnit, localX = 0, localY = 0, label = 'layer') => new THREE.Vector3(
@@ -224,14 +249,56 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
 
   const layerProgress = (layer) => {
     const entity = entities.get(layer.key)
-    if (!entity || !readyAssets.has(entity.dataset.page2AssetKey)) return 0
-    const scheduledStart = layer.layerIndex * config.overview.layerStagger
+    const moduleName = layerModule.get(layer.key)
+    if (!entity || !moduleName || !activeModules.has(moduleName) || !readyAssets.has(entity.dataset.page2AssetKey)) return 0
+    const moduleKeys = moduleLayers[moduleName]
+    const layerDelay = moduleName === 'initial' ? 0 : moduleKeys.indexOf(layer.key) * config.overview.layerStagger
+    const scheduledStart = moduleStartTimes[moduleName] + layerDelay
     const readyStart = readyAtElapsed.get(layer.key) ?? 0
     return easeOutCubic((elapsed - Math.max(scheduledStart, readyStart)) / config.overview.layerDuration)
   }
 
+  const setModuleVisible = (moduleName, visible) => {
+    ;(moduleGroups[moduleName] || []).forEach((group) => setVisible(group, visible))
+    ;(moduleLayers[moduleName] || []).forEach((key) => {
+      const entity = entities.get(key)
+      const ready = entity && readyAssets.has(entity.dataset.page2AssetKey)
+      setVisible(entity, Boolean(visible && ready))
+    })
+    if (moduleName === 'intro') setVisible(introGlow, visible)
+    if (moduleName === 'map') setVisible(mapGlow, visible)
+    if (moduleName === 'initial') setVisible(pearlGlow, visible)
+  }
+
+  const enterModule = (moduleName) => {
+    if (activeModules.has(moduleName)) return false
+    activeModules.add(moduleName)
+    setModuleVisible(moduleName, true)
+    onModuleEnter?.(moduleName, moduleStartTimes[moduleName])
+    return true
+  }
+
+  const enterFloorBackgroundTitleAndMain = () => enterModule('initial')
+  const enterIntroModule = () => enterModule('intro')
+  const enterMapModule = () => enterModule('map')
+  const enterTypesModule = () => enterModule('types')
+  const enterTimelineModule = () => enterModule('timeline')
+
+  const activateAllModules = () => {
+    Object.keys(moduleLayers).forEach((moduleName) => enterModule(moduleName))
+  }
+
+  const runOverviewSequence = () => {
+    if (elapsed >= moduleStartTimes.initial) enterFloorBackgroundTitleAndMain()
+    if (elapsed >= moduleStartTimes.intro) enterIntroModule()
+    if (elapsed >= moduleStartTimes.map) enterMapModule()
+    if (elapsed >= moduleStartTimes.types) enterTypesModule()
+    if (elapsed >= moduleStartTimes.timeline) enterTimelineModule()
+  }
+
   const applyEntry = () => {
     config.layers.forEach((layer) => {
+      if (!activeModules.has(layerModule.get(layer.key))) return
       const p = layerProgress(layer)
       const options = {}
       if (['intro-line', 'intro-text'].includes(layer.key)) options.x = -0.045
@@ -242,12 +309,18 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       if (layer.key.startsWith('timeline-')) options.up = -0.035
       setLayerPose(layer.key, p, options)
     })
-    const tongliang = layerProgress(layerConfig('map-tongliang'))
-    setGlow(mapGlow, tongliang * 0.13, tongliang * 0.48, 0.92)
-    const intro = layerProgress(layerConfig('intro-line'))
-    setGlow(introGlow, intro * 0.08, intro * 0.2, 0.96)
-    const pearl = layerProgress(layerConfig('main-pearl'))
-    setGlow(pearlGlow, pearl * 0.12, pearl * 0.34, 0.92)
+    if (activeModules.has('map')) {
+      const tongliang = layerProgress(layerConfig('map-tongliang'))
+      setGlow(mapGlow, tongliang * 0.13, tongliang * 0.48, 0.92)
+    }
+    if (activeModules.has('intro')) {
+      const intro = layerProgress(layerConfig('intro-line'))
+      setGlow(introGlow, intro * 0.08, intro * 0.2, 0.96)
+    }
+    if (activeModules.has('initial')) {
+      const pearl = layerProgress(layerConfig('main-pearl'))
+      setGlow(pearlGlow, pearl * 0.12, pearl * 0.34, 0.92)
+    }
   }
 
   const applyFinal = () => {
@@ -264,72 +337,83 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       entity.object3D.scale.setScalar(pose.scale)
       setOpacity(entity, readyAssets.has(entity.dataset.page2AssetKey) ? 1 : 0)
     })
+    setVisible(fireHit, mode === 'overview')
     setVisible(fireCue, mode === 'overview')
   }
 
   const applyContinuous = (delta) => {
     continuousElapsed += delta
     const seconds = continuousElapsed / 1000
-    const ring = entities.get('main-ring')
-    ring.object3D.rotation.z = -(seconds / config.mainVisual.ringRotationSeconds) * Math.PI * 2
-    const mapPoint = entities.get('map-tongliang')
-    const mapPulseValue = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
-    mapPoint.object3D.scale.setScalar(1)
-    setOpacity(mapPoint, 0.72 + mapPulseValue * 0.28)
-    setGlow(
-      mapGlow,
-      0.08 + mapPulseValue * 0.13,
-      0.2 + (1 - mapPulseValue) * 0.42,
-      1 + mapPulseValue * (config.map.tongliangPulseScale - 1),
-    )
-    const introLine = entities.get('intro-line')
-    const introPulse = (Math.sin((seconds * Math.PI * 2) / (config.intro.pulseDuration / 1000) + 0.45) + 1) * 0.5
-    setOpacity(introLine, 0.8 + introPulse * 0.2)
-    setGlow(introGlow, 0.045 + introPulse * 0.085, 0.09 + introPulse * 0.17, 0.98 + introPulse * 0.05)
-    const performers = entities.get('main-performers')
-    const dancers = entities.get('main-dancers')
-    const dragon = entities.get('main-dragon')
-    const pearl = entities.get('main-pearl')
-    const scene = entities.get('main-scene')
-    const performersPose = finalPoses.get('main-performers')
-    const dancersPose = finalPoses.get('main-dancers')
-    const dragonPose = finalPoses.get('main-dragon')
-    const pearlPose = finalPoses.get('main-pearl')
-    const scenePose = finalPoses.get('main-scene')
-    const sharedRhythm = Math.sin((seconds * Math.PI * 2) / 5.1)
-    moveOnBoard(scene, scenePose, { vertical: Math.sin(seconds * 0.72) * config.mainVisual.sceneAmplitude })
-    moveOnBoard(performers, performersPose, {
-      vertical: Math.sin((seconds * Math.PI * 2) / 4.8 + 0.38) * config.mainVisual.performersAmplitude,
-      depth: Math.sin((seconds * Math.PI * 2) / 5.7) * config.mainVisual.performersAmplitude * 0.35,
-    })
-    moveOnBoard(dancers, dancersPose, {
-      x: Math.cos((seconds * Math.PI * 2) / 5.1) * config.mainVisual.dancersMotionAmplitude * 0.32,
-      vertical: sharedRhythm * config.mainVisual.dancersMotionAmplitude,
-      depth: Math.sin((seconds * Math.PI * 2) / 5.1 + 0.35) * config.mainVisual.dancersMotionAmplitude * 0.28,
-    })
-    moveOnBoard(dragon, dragonPose, {
-      x: Math.cos((seconds * Math.PI * 2) / 5.1 + 0.18) * config.mainVisual.dragonMotionAmplitude * 0.42,
-      vertical: Math.sin((seconds * Math.PI * 2) / 5.1 + 0.16) * config.mainVisual.dragonMotionAmplitude,
-      depth: Math.sin((seconds * Math.PI * 2) / 4.6 + 0.82) * config.mainVisual.dragonMotionAmplitude * 0.38,
-    })
-    const pearlPulse = (Math.sin((seconds * Math.PI * 2) / 3.1) + 1) * 0.5
-    const pearlMotion = {
-      x: Math.cos((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlMotionAmplitude * 0.38,
-      vertical: Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlMotionAmplitude,
-      depth: Math.sin((seconds * Math.PI * 2) / 3.7) * config.mainVisual.pearlMotionAmplitude * 0.28,
+    if (activeModules.has('initial')) {
+      const ring = entities.get('main-ring')
+      ring.object3D.rotation.z = -(seconds / config.mainVisual.ringRotationSeconds) * Math.PI * 2
+      const performers = entities.get('main-performers')
+      const dancers = entities.get('main-dancers')
+      const dragon = entities.get('main-dragon')
+      const pearl = entities.get('main-pearl')
+      const scene = entities.get('main-scene')
+      const performersPose = finalPoses.get('main-performers')
+      const dancersPose = finalPoses.get('main-dancers')
+      const dragonPose = finalPoses.get('main-dragon')
+      const pearlPose = finalPoses.get('main-pearl')
+      const scenePose = finalPoses.get('main-scene')
+      const sharedRhythm = Math.sin((seconds * Math.PI * 2) / 5.1)
+      moveOnBoard(scene, scenePose, { vertical: Math.sin(seconds * 0.72) * config.mainVisual.sceneAmplitude })
+      moveOnBoard(performers, performersPose, {
+        vertical: Math.sin((seconds * Math.PI * 2) / 4.8 + 0.38) * config.mainVisual.performersAmplitude,
+        depth: Math.sin((seconds * Math.PI * 2) / 5.7) * config.mainVisual.performersAmplitude * 0.35,
+      })
+      moveOnBoard(dancers, dancersPose, {
+        x: Math.cos((seconds * Math.PI * 2) / 5.1) * config.mainVisual.dancersMotionAmplitude * 0.32,
+        vertical: sharedRhythm * config.mainVisual.dancersMotionAmplitude,
+        depth: Math.sin((seconds * Math.PI * 2) / 5.1 + 0.35) * config.mainVisual.dancersMotionAmplitude * 0.28,
+      })
+      moveOnBoard(dragon, dragonPose, {
+        x: Math.cos((seconds * Math.PI * 2) / 5.1 + 0.18) * config.mainVisual.dragonMotionAmplitude * 0.42,
+        vertical: Math.sin((seconds * Math.PI * 2) / 5.1 + 0.16) * config.mainVisual.dragonMotionAmplitude,
+        depth: Math.sin((seconds * Math.PI * 2) / 4.6 + 0.82) * config.mainVisual.dragonMotionAmplitude * 0.38,
+      })
+      const pearlPulse = (Math.sin((seconds * Math.PI * 2) / 3.1) + 1) * 0.5
+      const pearlMotion = {
+        x: Math.cos((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlMotionAmplitude * 0.38,
+        vertical: Math.sin((seconds * Math.PI * 2) / 3.1 + 0.35) * config.mainVisual.pearlMotionAmplitude,
+        depth: Math.sin((seconds * Math.PI * 2) / 3.7) * config.mainVisual.pearlMotionAmplitude * 0.28,
+      }
+      moveOnBoard(pearl, pearlPose, pearlMotion)
+      moveOnBoard(pearlGlow, { position: decorationPoses.get(pearlGlow.id) }, pearlMotion)
+      pearl.object3D.scale.setScalar(1)
+      setOpacity(pearl, 0.84 + pearlPulse * 0.16)
+      setGlow(pearlGlow, 0.06 + pearlPulse * 0.13, 0.12 + pearlPulse * 0.28, 0.94 + pearlPulse * 0.12)
+      setOpacity(entities.get('main-sparks'), 0.9 + Math.sin(seconds * 1.05) * 0.04)
     }
-    moveOnBoard(pearl, pearlPose, pearlMotion)
-    moveOnBoard(pearlGlow, { position: decorationPoses.get(pearlGlow.id) }, pearlMotion)
-    pearl.object3D.scale.setScalar(1)
-    setOpacity(pearl, 0.84 + pearlPulse * 0.16)
-    setGlow(pearlGlow, 0.06 + pearlPulse * 0.13, 0.12 + pearlPulse * 0.28, 0.94 + pearlPulse * 0.12)
-    setOpacity(entities.get('main-sparks'), 0.9 + Math.sin(seconds * 1.05) * 0.04)
 
-    setVisible(fireCue, true)
-    const cuePulse = (Math.sin(seconds * Math.PI * 1.35) + 1) * 0.5
-    fireCue.object3D.scale.setScalar(0.96 + cuePulse * 0.1)
-    setOpacity(fireCue.querySelector('[data-page2-fire-cue-ring]'), 0.32 + cuePulse * 0.42)
-    setOpacity(fireCue.querySelector('[data-page2-fire-cue-dot]'), 0.62 + cuePulse * 0.34)
+    const moduleSettled = (moduleName) => mode === 'overview' || elapsed >= moduleStartTimes[moduleName]
+      + (moduleLayers[moduleName].length - 1) * config.overview.layerStagger
+      + config.overview.layerDuration
+
+    if (activeModules.has('map') && moduleSettled('map')) {
+      const mapPoint = entities.get('map-tongliang')
+      const mapPulseValue = (Math.sin((seconds * Math.PI * 2) / (config.map.tongliangPulseDuration / 1000)) + 1) * 0.5
+      mapPoint.object3D.scale.setScalar(1)
+      setOpacity(mapPoint, 0.72 + mapPulseValue * 0.28)
+      setGlow(mapGlow, 0.08 + mapPulseValue * 0.13, 0.2 + (1 - mapPulseValue) * 0.42, 1 + mapPulseValue * (config.map.tongliangPulseScale - 1))
+    }
+
+    if (activeModules.has('intro') && moduleSettled('intro')) {
+      const introLine = entities.get('intro-line')
+      const introPulse = (Math.sin((seconds * Math.PI * 2) / (config.intro.pulseDuration / 1000) + 0.45) + 1) * 0.5
+      setOpacity(introLine, 0.8 + introPulse * 0.2)
+      setGlow(introGlow, 0.045 + introPulse * 0.085, 0.09 + introPulse * 0.17, 0.98 + introPulse * 0.05)
+    }
+
+    if (mode === 'overview') {
+      setVisible(fireHit, true)
+      setVisible(fireCue, true)
+      const cuePulse = (Math.sin(seconds * Math.PI * 1.35) + 1) * 0.5
+      fireCue.object3D.scale.setScalar(0.96 + cuePulse * 0.1)
+      setOpacity(fireCue.querySelector('[data-page2-fire-cue-ring]'), 0.32 + cuePulse * 0.42)
+      setOpacity(fireCue.querySelector('[data-page2-fire-cue-dot]'), 0.62 + cuePulse * 0.34)
+    }
 
     lateReveals.forEach((value, key) => {
       value.elapsed += delta
@@ -361,8 +445,12 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     elapsed = 0
     continuousElapsed = 0
     lateReveals.clear()
+    activeModules.clear()
     setVisible(overviewRoot, true)
-    Object.values(groups).forEach((group) => group.object3D.position.set(0, 0, 0))
+    Object.values(groups).forEach((group) => {
+      group.object3D.position.set(0, 0, 0)
+      setVisible(group, false)
+    })
     config.layers.forEach((layer) => {
       const options = {}
       if (['intro-line', 'intro-text'].includes(layer.key)) options.x = -0.045
@@ -379,11 +467,16 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
         entity.object3D.rotation.x = angle
         entity.object3D.rotation.y = 0
         entity.object3D.rotation.z = 0
+        setVisible(entity, false)
       }
     })
     setGlow(mapGlow, 0, 0, 1)
     setGlow(introGlow, 0, 0, 1)
     setGlow(pearlGlow, 0, 0, 1)
+    setVisible(mapGlow, false)
+    setVisible(introGlow, false)
+    setVisible(pearlGlow, false)
+    setVisible(fireHit, false)
     setVisible(fireCue, false)
   }
 
@@ -398,7 +491,7 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       keys.forEach((key) => {
         const layer = config.layers.find((item) => item.key === key)
         const entity = entities.get(key)
-        setVisible(entity, true)
+        setVisible(entity, activeModules.has(layerModule.get(key)))
         entity?.object3D.traverse((object) => {
           if (object.material && layer) object.renderOrder = layer.renderOrder
         })
@@ -411,17 +504,21 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
     startEntry() {
       resetEntry()
       mode = 'entering'
+      enterFloorBackgroundTitleAndMain()
     },
     startExit() {
       if (mode === 'exiting') return
       elapsed = 0
       mode = 'exiting'
+      setVisible(fireHit, false)
       setVisible(fireCue, false)
       applyFinal()
     },
     restore() {
       elapsed = 0
       mode = 'restoring'
+      activateAllModules()
+      setVisible(fireHit, false)
       setVisible(fireCue, false)
       setVisible(overviewRoot, true)
       applyFinal()
@@ -431,9 +528,12 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
       if (mode === 'hidden') return
       elapsed += delta
       if (mode === 'entering') {
+        runOverviewSequence()
         applyEntry()
-        if (elapsed >= config.overviewEntranceDuration) {
+        if (elapsed >= config.overviewSequence.mainAnimationStartDelayMs) applyContinuous(delta)
+        if (elapsed >= sequenceCompleteAt) {
           mode = 'overview'
+          activateAllModules()
           applyFinal()
           onEntryComplete?.()
         }
@@ -456,14 +556,15 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
         }
       }
     },
-    hide() { mode = 'hidden'; setVisible(fireCue, false); setVisible(overviewRoot, false) },
-    showFinal() { mode = 'overview'; setVisible(overviewRoot, true); applyFinal(); setVisible(fireCue, true) },
+    hide() { mode = 'hidden'; setVisible(fireHit, false); setVisible(fireCue, false); setVisible(overviewRoot, false) },
+    showFinal() { mode = 'overview'; activateAllModules(); setVisible(overviewRoot, true); applyFinal(); setVisible(fireHit, true); setVisible(fireCue, true) },
     getMode: () => mode,
     getLayerElements: () => layerElements,
     getLayerById: () => entities,
     getReadyAssets: () => new Set(readyAssets),
     ensureReadyLayersVisible() {
       setVisible(overviewRoot, true)
+      activateAllModules()
       readyAssets.forEach((assetKey) => {
         ;(layersByAsset.get(assetKey) || []).forEach((key) => setVisible(entities.get(key), true))
       })
@@ -499,10 +600,14 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
         strongLayerCount: new Set(strongLayers).size,
       }
     },
-    getProgress: () => mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
+    getProgress: () => mode === 'entering' ? clamp01(elapsed / sequenceCompleteAt) : mode === 'overview' ? 1 : 0,
     getDebugState: () => ({
       mode,
-      progress: mode === 'entering' ? clamp01(elapsed / config.overviewEntranceDuration) : mode === 'overview' ? 1 : 0,
+      progress: mode === 'entering' ? clamp01(elapsed / sequenceCompleteAt) : mode === 'overview' ? 1 : 0,
+      sequenceElapsedMs: Math.round(elapsed),
+      sequenceCompleteAtMs: sequenceCompleteAt,
+      moduleStartTimes: { ...moduleStartTimes },
+      activeModules: [...activeModules],
       rearEdgeOrigin: [0, rearEdgeY, 0],
       cardFrontEdge: [0, rearEdgeY - config.spatial.cardDepthUnit, 0],
       readyAssets: [...readyAssets],
@@ -511,6 +616,6 @@ export function createPage2Overview({ root, config, onEntryComplete, onExitCompl
         position: entities.get(layer.key)?.object3D.position.toArray() || null,
       })),
     }),
-    destroy() { mode = 'hidden'; lateReveals.clear() },
+    destroy() { mode = 'hidden'; activeModules.clear(); lateReveals.clear() },
   }
 }

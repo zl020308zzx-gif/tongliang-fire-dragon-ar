@@ -81,7 +81,11 @@ const layers = layerKeys.map((key, layerIndex) => {
 export const PAGE2_CONFIG = {
   targetIndex: 1,
   overviewStableDelay: 250,
-  overviewEntranceDuration: 3200,
+  overviewSequence: {
+    moduleIntervalMs: 4000,
+    mainAnimationStartDelayMs: 700,
+    finalPromptDelayMs: 1500,
+  },
   overviewDepthDirection: 'card-front',
   markerAspect: 210 / 148,
   markerImage: assetUrl('assets/markers/marker-02-craft.jpg'),
