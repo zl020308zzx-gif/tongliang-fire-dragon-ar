@@ -1,6 +1,6 @@
 const easeOutCubic = (value) => 1 - Math.pow(1 - value, 3)
 
-// 文件名为兼容旧工程保留；控制器只负责已选展示模式的局部展开动画。
+// 文件名为兼容旧工程保留；控制器只负责唯一的竖向展开动画。
 export function createPanelRiseController({
   panelHinge,
   panelContent,
@@ -12,7 +12,6 @@ export function createPanelRiseController({
 }) {
   const THREE = window.AFRAME.THREE
   const sign = config.frontDirectionSign === -1 ? -1 : 1
-  let modeName = null
   let mode = null
   let markerAspect = markerAspectFallback
   let rising = false
@@ -30,20 +29,16 @@ export function createPanelRiseController({
   })
 
   const getTransforms = () => {
-    const vertical = modeName === 'vertical'
-    const hinge = vector(vertical ? mode.hingePosition : mode.position)
-    if (vertical) hinge.y *= markerAspect / markerAspectFallback
+    const hinge = vector(mode.hingePosition)
+    hinge.y *= markerAspect / markerAspectFallback
     const content = vector(mode.contentPosition)
-    const startRotation = orientedRotation(vector(mode.startRotation ?? mode.rotation))
-    const targetRotation = orientedRotation(vector(mode.endRotation ?? mode.rotation))
+    const startRotation = orientedRotation(vector(mode.startRotation))
+    const targetRotation = orientedRotation(vector(mode.endRotation))
     const startPosition = { ...hinge }
-    const targetPosition = {
-      ...hinge,
-      z: hinge.z + (vertical ? 0 : sign * mode.frontOffset),
-    }
+    const targetPosition = { ...hinge }
     const targetContentPosition = {
       ...content,
-      z: content.z + (vertical ? sign * mode.frontOffset : 0),
+      z: content.z + sign * mode.frontOffset,
     }
     return { startRotation, targetRotation, startPosition, targetPosition, targetContentPosition }
   }
@@ -68,7 +63,6 @@ export function createPanelRiseController({
     const effectiveScale = config.baseScale * mode.scale
     panelContent.object3D.scale.setScalar(effectiveScale)
     onUpdate?.({
-      mode: modeName,
       progress,
       rotation,
       targetRotation: transforms.targetRotation,
@@ -88,7 +82,7 @@ export function createPanelRiseController({
       apply(progress)
       if (progress >= 1) {
         rising = false
-        onComplete?.({ mode: modeName })
+        onComplete?.()
       }
     }
     frameId = requestAnimationFrame(tick)
@@ -97,8 +91,7 @@ export function createPanelRiseController({
   frameId = requestAnimationFrame(tick)
 
   return {
-    configure(nextModeName, nextMode, nextMarkerAspect = markerAspectFallback) {
-      modeName = nextModeName
+    configure(nextMode, nextMarkerAspect = markerAspectFallback) {
       mode = nextMode
       markerAspect = nextMarkerAspect || markerAspectFallback
       rising = false
@@ -117,7 +110,7 @@ export function createPanelRiseController({
       rising = true
       previousTime = performance.now()
       apply(0)
-      onRiseStart?.({ mode: modeName })
+      onRiseStart?.()
     },
     pause() {
       paused = true
@@ -133,7 +126,6 @@ export function createPanelRiseController({
       if (mode) apply(0)
     },
     getState: () => ({
-      mode: modeName,
       rising,
       paused,
       progress: mode ? Math.min(1, elapsed / mode.animationDuration) : 0,

@@ -40,7 +40,7 @@ const debugPanel = (mode, config) => {
   if (mode === 'paint') return `<aside class="debug-panel paint-debug-panel"><p>指针位置 <strong data-debug-brush-position>—</strong></p><p>gestureActive <strong data-debug-paint-active>否</strong></p><p>pointerCaptured <strong data-debug-paint-captured>否</strong></p><p>insideCanvas <strong data-debug-paint-inside>否</strong></p><p>insideColorMask <strong data-debug-paint-mask>否</strong></p><p>suspendedOutsideCanvas <strong data-debug-paint-suspended>否</strong></p><p>lastValidPaintPoint <strong data-debug-paint-last>—</strong></p><p>画笔半径 <strong>${config.paintBrush.radius} px</strong></p><p>核心比例 <strong>${config.paintBrush.coreRatio}</strong></p><p>覆盖率 <strong data-debug-paint-progress>0%</strong></p><div class="paint-debug-canvases"><figure><canvas class="debug-valid-mask" width="${config.paintInteraction.statistics.size}" height="${config.paintInteraction.statistics.size}"></canvas><figcaption>有效区域</figcaption></figure><figure><canvas class="debug-painted-mask" width="${config.paintInteraction.statistics.size}" height="${config.paintInteraction.statistics.size}"></canvas><figcaption>coverageMask</figcaption></figure></div></aside><div class="hit-area-debug" hidden></div>`
   if (mode === 'eye') return `<aside class="debug-panel"><p>当前 UV <strong data-debug-eye-uv>—</strong></p><p>是否命中 <strong data-debug-eye-hit>—</strong></p></aside><div class="eye-hotspot-debug" hidden><i></i></div>`
   if (mode === 'video') return `<aside class="debug-panel"><p>视频状态 <strong data-debug-video-mode>idle</strong></p><p>静态平面 <strong data-debug-video-craft>显示</strong></p><p>视频平面 <strong data-debug-video-plane>隐藏</strong></p></aside>`
-  if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>panelSurfaceZ <strong data-debug-explode-panel>${config.explodedView.panelSurfaceZ}</strong></p><p>frontDirectionSign <strong data-debug-explode-sign>${config.explodedView.frontDirectionSign}</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><p data-debug-explode-warning>等待图层状态</p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre><p>竹骨标注坐标 <strong>见画面</strong></p></aside>`
+  if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>panelSurfaceZ <strong data-debug-explode-panel>${config.explodedView.panelSurfaceZ}</strong></p><p>frontDirectionSign <strong data-debug-explode-sign>${config.explodedView.frontDirectionSign}</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><p data-debug-explode-warning>等待图层状态</p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre><p>多层局部标注 <strong>见画面</strong></p></aside>`
   if (mode === 'hints') return `<aside class="debug-panel hints-debug-panel"><p>提示配置 <strong>全部显示</strong></p><pre>${JSON.stringify(config.interactionHints, null, 2)}</pre></aside><div class="hit-area-debug" hidden></div>`
   if (mode === 'state') return `<aside class="debug-panel state-debug-panel"><p>当前状态 <strong data-debug-current-state>LINEART</strong></p><p>上一个状态 <strong data-debug-previous-state>—</strong></p><p>bambooProgress <strong data-debug-state-bamboo>0%</strong></p><p>paperProgress <strong data-debug-state-paper>0%</strong></p><p>paintProgress <strong data-debug-state-paint>0%</strong></p><p>视频状态 <strong data-debug-video>idle</strong></p><p>完成状态 <strong data-debug-completed>false</strong></p></aside>`
   return ''
@@ -97,25 +97,26 @@ export function renderPage1Preview(root) {
       <div class="eye-interaction-hint" hidden><i></i><b>点击龙眼</b></div>
       <div class="stage-particles" aria-hidden="true"></div>
       <div class="review-ember-glow" aria-hidden="true" hidden></div>
-      <div class="parallax-guide" hidden><i class="phone-shape"></i><span>←　→</span><b>左右摆动</b></div>
       <nav class="explode-stage-tabs" aria-label="四层成龙谱阶段" hidden>
         ${config.explodedView.layers.map((layer) => `<button type="button" data-explode-tag="${layer.id}"><strong>${layer.stage}</strong>${layer.shortLabel}</button>`).join('')}
       </nav>
-      <div class="bamboo-annotations" hidden>
-        ${config.explodedView.bambooAnnotations.map((item) => `<span data-annotation="${item.id}"><i></i>${item.label}</span>`).join('')}
+      <div class="craft-annotations" hidden>
+        ${Object.entries(config.explodedView.annotations).flatMap(([layerId, items]) =>
+          items.map((item) => `<span data-annotation-layer="${layerId}" data-annotation="${item.id}" hidden><i></i><strong>${item.title}</strong><small>${item.description}</small></span>`),
+        ).join('')}
       </div>
+      <p class="craft-feedback" role="status" hidden></p>
       <p class="layer-error" role="alert" hidden></p>
 
       <section class="step-card" aria-labelledby="step-title">
-        <p class="step-number">步骤：<strong>01 / 04</strong></p>
-        <h2 id="step-title">选材起稿</h2>
-        <p class="step-description">根据龙头造型确定龙眼、鼻部、龙口、龙角和龙颈的位置，<br class="desktop-break" />为后续竹骨扎制建立基本轮廓。</p>
-        <p class="step-hint"><span>操作提示</span>长按龙首，让竹骨逐渐成形。</p>
+        <p class="step-number">${config.copy.steps.lineart.number}</p>
+        <h2 id="step-title">${config.copy.steps.lineart.title}</h2>
+        <p class="step-description">${config.copy.steps.lineart.description}</p>
+        <p class="step-hint"><span>操作提示</span>起稿完成后进入扎骨体验。</p>
         <div class="card-actions">
-          <button type="button" data-card-action="paper-complete" hidden>完成裱糊</button>
           <button type="button" data-card-action="retry" hidden>重新播放</button>
           <button type="button" data-card-action="skip" hidden>跳过视频</button>
-          <button type="button" data-card-action="review" hidden>查看成龙过程</button>
+          <button type="button" data-card-action="review" hidden>查看工艺总览</button>
           <button type="button" data-card-action="overview" hidden>返回全貌</button>
           <button type="button" data-card-action="restart" hidden>重新体验</button>
           <button type="button" data-card-action="end" hidden>结束预览</button>

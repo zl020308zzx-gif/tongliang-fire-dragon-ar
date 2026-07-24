@@ -192,7 +192,6 @@ export function initializePage1Controller({
   }
 
   const actions = {
-    'paper-complete': () => confirmPaper(),
     retry: () => state === PAGE1_STATES.VIDEO_PLAYING && videoController?.retry(),
     skip: () => state === PAGE1_STATES.VIDEO_PLAYING && videoController?.skip(),
     review: () => startExplodedView(),
@@ -208,7 +207,9 @@ export function initializePage1Controller({
     states: PAGE1_STATES,
     signal,
     actions,
+    copy: config.copy,
     stampDurationMs: config.craftStamps.lightDurationMs,
+    feedbackDurationMs: config.craftStamps.feedbackDurationMs,
   })
 
   const meta = (extra = {}) => ({ hasSeenFullPaper, selectedLayer, ...extra })
@@ -298,21 +299,30 @@ export function initializePage1Controller({
 
   const showExplodeUi = (visible) => {
     root.querySelector('.explode-stage-tabs').hidden = !visible
-    root.querySelector('.parallax-guide').hidden = !visible
     root.querySelector('.page1-preview').classList.toggle('is-explode-view', visible)
   }
 
   const updateAnnotations = () => {
-    const container = root.querySelector('.bamboo-annotations')
-    const visible = debugMode === 'explode' || (state === PAGE1_STATES.LAYER_FOCUS && selectedLayer === 'bamboo')
+    const container = root.querySelector('.craft-annotations')
+    const visible = state === PAGE1_STATES.LAYER_FOCUS && Boolean(selectedLayer)
     container.hidden = !visible
     if (!visible || !exploded) return
-    config.explodedView.bambooAnnotations.forEach((annotation) => {
-      const point = exploded.projectLayerUv('bamboo', annotation.uv)
+    Object.entries(config.explodedView.annotations).forEach(([layerId, annotations]) => {
+      annotations.forEach((annotation) => {
+        const label = root.querySelector(`[data-annotation="${annotation.id}"]`)
+        if (label) label.hidden = layerId !== selectedLayer
+      })
+    })
+    const annotations = config.explodedView.annotations[selectedLayer] ?? []
+    annotations.forEach((annotation) => {
+      const point = exploded.projectLayerUv(selectedLayer, annotation.uv)
       const label = root.querySelector(`[data-annotation="${annotation.id}"]`)
       if (point && label) {
-        label.style.left = `${point.x}px`
-        label.style.top = `${point.y}px`
+        label.hidden = false
+        const x = Math.min(window.innerWidth - 166, Math.max(12, point.x + (annotation.offset?.x ?? 0)))
+        const y = Math.min(window.innerHeight - 96, Math.max(92, point.y + (annotation.offset?.y ?? 0)))
+        label.style.left = `${x}px`
+        label.style.top = `${y}px`
       }
     })
   }
@@ -368,6 +378,38 @@ export function initializePage1Controller({
     showExplodeUi(inExplode && state !== PAGE1_STATES.EXPLODE_TRANSITION)
     updateDebug()
     updateProjectedUi()
+  }
+
+  const setCraftPlaneOpacity = (opacity) => {
+    craftPlane.setAttribute('material', 'opacity', opacity)
+    craftPlane.object3D.traverse((object) => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.filter(Boolean).forEach((material) => {
+        material.transparent = true
+        material.opacity = opacity
+        material.needsUpdate = true
+      })
+    })
+  }
+
+  const beginLineartStage = ({ announce = true } = {}) => {
+    interactionLocked = true
+    progress.set('bamboo', 0)
+    renderer.renderBamboo(0, 1)
+    setCraftPlaneOpacity(0)
+    transition(PAGE1_STATES.LINEART)
+    if (announce) ui.showFeedback(config.copy.feedback.lineart)
+    animate(
+      config.transitions.lineartRevealDurationMs,
+      setCraftPlaneOpacity,
+      () => {
+        setCraftPlaneOpacity(1)
+        schedule(() => {
+          interactionLocked = false
+          transition(PAGE1_STATES.BAMBOO_BUILD)
+        }, config.transitions.lineartCompleteHoldMs)
+      },
+    )
   }
 
   const showBadge = () => {
@@ -595,14 +637,14 @@ export function initializePage1Controller({
     interactionLocked = false
     pointerActivity = { isActive: false, mode: null }
     root.querySelector('.review-ember-glow').hidden = true
-    root.querySelector('.parallax-guide').classList.remove('has-moved')
-    root.querySelector('.bamboo-annotations').hidden = true
+    root.querySelector('.craft-annotations').hidden = true
     showExplodeUi(false)
     renderer.renderBamboo(0, 1)
     errorOutput.hidden = true
     arBridge?.restartOpening?.()
     trackingPaused = Boolean(arBridge)
     transition(PAGE1_STATES.LINEART, { resetStamps: true })
+    if (!arBridge && !debugMode) beginLineartStage()
     hints.hideBamboo('页面已重置，等待重新开始交互')
     syncCanvasHints({ hintAllowed: false })
   }
@@ -641,6 +683,7 @@ export function initializePage1Controller({
         if (!hasSeenFullPaper && next >= config.paperCompare.completeThreshold) {
           hasSeenFullPaper = true
           transition(PAGE1_STATES.PAPER_READY)
+          schedule(confirmPaper, 80)
         } else {
           ui.setState(state, progress.getAll(), meta())
           updateDebug()
@@ -731,9 +774,9 @@ export function initializePage1Controller({
       onUpdate(value) {
         parallaxState = value
         if (debugMode === 'explode') updateDebug()
-        if (selectedLayer === 'bamboo') updateAnnotations()
+        if (selectedLayer) updateAnnotations()
       },
-      onFirstMove: () => root.querySelector('.parallax-guide').classList.add('has-moved'),
+      onFirstMove: () => {},
     })
 
     root.querySelectorAll('[data-explode-tag]').forEach((button) =>
@@ -764,6 +807,7 @@ export function initializePage1Controller({
     videoPlane,
     craftPlane,
     path: config.assets.awakenVideo,
+    maxDurationMs: config.video.maxDurationMs,
     signal,
     errorOutput,
     onEnded: enterAwakenReview,
@@ -789,6 +833,7 @@ export function initializePage1Controller({
 
   ui.setState(state, progress.getAll(), meta({ resetStamps: true }))
   renderer.renderBamboo(0, 1)
+  if (!arBridge && !debugMode) beginLineartStage()
   if (scene.hasLoaded) setupSceneControllers()
   else scene.addEventListener('loaded', setupSceneControllers, { once: true, signal })
 
@@ -841,8 +886,7 @@ export function initializePage1Controller({
               : PAGE1_STATES.EYE_READY,
           )
         } else {
-          renderer.renderBamboo(0, 1)
-          transition(PAGE1_STATES.LINEART)
+          beginLineartStage()
         }
       },
       pauseTracking() {

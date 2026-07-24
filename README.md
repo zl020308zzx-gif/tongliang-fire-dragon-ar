@@ -54,3 +54,22 @@ npm.cmd run dev
 npm.cmd run build
 ```
 
+## 第三页《火舞夜空》
+
+第三页继续复用第一页、第二页已经初始化的 A-Frame 场景、摄像机、MindAR 实例、`targets.mind` 与统一渲染循环，对应 `targetIndex: 2`。
+
+- 本地入口：`http://localhost:5173/?ar=page3`
+- 桌面调试：`http://localhost:5173/?ar=page3&debug=1`
+- 第三页识别图：`public/assets/markers/marker-page3.png`
+- 第三页视觉、透明表演视频、音频和实拍视频：`public/assets/page3/`
+- 第三页配置：`src/page3/page3-config.js`
+- 状态机与共享场景控制：`src/page3/page3.js`
+- 预加载：`src/page3/page3-preloader.js`
+- 红金火星与鼓面波纹：`src/page3/page3-effects.js`
+- 文案：`src/page3/page3-content.js`
+
+第三页按“舞台搭建 → 龙珠引舞 → 火龙起舞 → 铁花高潮 → 收束谢幕”推进。每一步只接受一次有效鼓面点击；追踪短暂丢失时暂停状态计时、透明 WebM、音频和粒子，恢复识别后从原状态继续。
+
+`?ar=page3&debug=1` 会显示当前状态、追踪状态、关键/延后资源加载结果、鼓面是否可点、累计击鼓次数、透明视频真实尺寸与 FPS，并提供模拟识别、模拟击鼓、跳到下一状态和重置按钮。调试模拟不会启动摄像头；真机验收仍需使用第三张识别图。
+
+实拍视频 `page3-real-performance.mp4` 不参与首屏预加载，仅在用户点击“观看真实铜梁火龙表演”后加载。播放结束后页面进入黑底完成画面。

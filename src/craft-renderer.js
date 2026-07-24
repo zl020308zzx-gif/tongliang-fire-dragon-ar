@@ -117,7 +117,7 @@ export function createCraftRenderer({
     context.shadowColor = 'rgba(45, 20, 8, 0.75)'
     context.shadowBlur = 10
 
-    if (overlayState.hintAllowed && [states.LINEART, states.BAMBOO_BUILD].includes(state)) {
+    if (overlayState.hintAllowed && state === states.BAMBOO_BUILD) {
       const x = canvas.width * hintConfig.bamboo.center.x
       const y = canvas.height * (1 - hintConfig.bamboo.center.y)
       const radius = hintConfig.canvas.holdRadius
@@ -132,7 +132,7 @@ export function createCraftRenderer({
       context.arc(x, y, radius + 18, 0, Math.PI * 2)
       context.stroke()
       context.fillStyle = '#ffe08a'
-      context.fillText(state === states.BAMBOO_BUILD ? `${Math.round(overlayState.bambooProgress * 100)}%` : '长按', x, y)
+      context.fillText(`${Math.round(overlayState.bambooProgress * 100)}%`, x, y)
     } else if ([states.PAPER_COMPARE, states.PAPER_READY].includes(state)) {
       const x = Math.max(0, Math.min(canvas.width, canvas.width * overlayState.paperRatio))
       const handleY = canvas.height / 2

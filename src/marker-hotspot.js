@@ -2,6 +2,7 @@ export function createMarkerHotspot({
   scene,
   plane,
   visual,
+  targetVisual,
   label,
   config,
   signal,
@@ -29,12 +30,26 @@ export function createMarkerHotspot({
     visual.setAttribute('width', width)
     visual.setAttribute('height', height)
     visual.object3D.position.set(x, y, 0.006)
+    const dropTarget = config.bambooDropTarget
+    if (targetVisual && dropTarget) {
+      const targetWidth = dropTarget.xMax - dropTarget.xMin
+      const targetHeight = (dropTarget.yMax - dropTarget.yMin) * aspect
+      const targetX = (dropTarget.xMin + dropTarget.xMax) / 2 - 0.5
+      const targetY = (0.5 - (dropTarget.yMin + dropTarget.yMax) / 2) * aspect
+      targetVisual.setAttribute('width', targetWidth)
+      targetVisual.setAttribute('height', targetHeight)
+      targetVisual.object3D.position.set(targetX, targetY, 0.007)
+    }
   }
 
   const setVisibility = () => {
     const visible = enabled && tracked
     visual.object3D.visible = visible
     visual.setAttribute('visible', visible)
+    if (targetVisual) {
+      targetVisual.object3D.visible = visible
+      targetVisual.setAttribute('visible', visible)
+    }
     if (label) label.hidden = !visible
   }
 
@@ -50,6 +65,7 @@ export function createMarkerHotspot({
     const uv = { x: intersection.uv.x, y: intersection.uv.y }
     const image = { x: uv.x, y: 1 - uv.y }
     const hotspot = config.bambooHotspot
+    const dropTarget = config.bambooDropTarget
     return {
       uv,
       image,
@@ -58,6 +74,12 @@ export function createMarkerHotspot({
         image.x <= hotspot.xMax &&
         image.y >= hotspot.yMin &&
         image.y <= hotspot.yMax,
+      targetHit:
+        Boolean(dropTarget) &&
+        image.x >= dropTarget.xMin &&
+        image.x <= dropTarget.xMax &&
+        image.y >= dropTarget.yMin &&
+        image.y <= dropTarget.yMax,
     }
   }
 
@@ -77,6 +99,9 @@ export function createMarkerHotspot({
     'pointerdown',
     (event) => {
       if (!enabled || !tracked || (event.pointerType === 'mouse' && event.button !== 0)) return
+      const result = getIntersection(event.clientX, event.clientY)
+      onDebug({ ...result, aspect })
+      if (!result?.hit) return
       pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY }
     },
     { signal },
@@ -87,10 +112,12 @@ export function createMarkerHotspot({
       if (!pointerStart || pointerStart.id !== event.pointerId || !enabled || !tracked) return
       const distance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y)
       pointerStart = null
-      if (distance > 10) return
       const result = getIntersection(event.clientX, event.clientY)
       onDebug({ ...result, aspect })
-      if (result?.hit) onActivate(result)
+      const clickThreshold = config.bambooDrag?.clickThresholdPx ?? 12
+      if ((distance <= clickThreshold && result?.hit) || (distance > clickThreshold && result?.targetHit)) {
+        onActivate({ ...result, activationMode: distance > clickThreshold ? 'drag' : 'click' })
+      }
     },
     { signal },
   )
@@ -99,6 +126,7 @@ export function createMarkerHotspot({
 
   if (debug) {
     plane.setAttribute('material', 'color: #4de3ff; opacity: 0.12; wireframe: true; transparent: true; side: double')
+    targetVisual?.setAttribute('material', 'color: #ffd76f; opacity: 0.35; wireframe: true; transparent: true; side: double')
   }
   applyGeometry()
   setVisibility()

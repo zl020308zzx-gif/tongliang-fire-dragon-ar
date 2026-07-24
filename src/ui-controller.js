@@ -1,21 +1,4 @@
-const CONTENT = {
-  lineart: ['步骤：<strong>01 / 04</strong>', '选材起稿', '根据龙头造型确定龙眼、鼻部、龙口、龙角和龙颈的位置，<br />为后续竹骨扎制建立基本轮廓。'],
-  bamboo: ['步骤：<strong>02 / 04</strong>', '扎骨成形', '竹篾依照线稿弯曲、交叉和扎结，<br />形成龙头眼眶、上下颌、额角与龙颈的内部支撑。'],
-  paper: ['步骤：<strong>03 / 04</strong>', '裱糊塑形', '纸、布等表层材料覆盖竹骨，<br />使开放的竹篾结构形成完整龙头外形，<br />并为后续彩绘提供稳定表面。'],
-  paint: ['步骤：<strong>04 / 04</strong>', '彩绘装饰', '以朱红塑造火龙主体，以白黑强化眼眶、牙齿和龙口，<br />再以金色勾勒纹样、龙角与装饰边缘。'],
-  eye: ['完成仪式', '点睛成龙', '龙首完成彩绘后，<br />点击龙眼进入火龙苏醒的数字表演状态。'],
-  video: ['完成仪式', '火龙苏醒', '点睛后的龙首在锣鼓与火光中苏醒，<br />由制作完成的龙具进入火龙表演状态。'],
-  explode: ['完成仪式', '四层成龙谱', '从线稿起形、竹骨立架、裱糊塑形到彩绘成龙，<br />火龙龙首的制作时间过程被转化为可观察的空间层次。'],
-}
-
-const LAYER_CONTENT = {
-  lineart: ['01 选材起稿', '确定龙眼、龙鼻、龙口、龙角和龙颈的位置，<br />建立火龙龙首的基本造型比例。'],
-  bamboo: ['02 扎骨成形', '竹篾经过弯曲、交叉和扎结，<br />形成眼眶、上下颌、额角和龙颈的轻质支撑。'],
-  paper: ['03 裱糊塑形', '纸、布等表层材料覆盖竹骨，<br />将开放骨架转化为完整外形，并形成后续彩绘的基础。'],
-  color: ['04 彩绘装饰', '朱红塑造火龙主体，白黑强化眼眶、平齿和龙口，<br />金色勾勒纹样与装饰边缘。'],
-}
-
-export function createUiController({ root, states, signal, actions, stampDurationMs }) {
+export function createUiController({ root, states, signal, actions, copy, stampDurationMs, feedbackDurationMs }) {
   const stepNumber = root.querySelector('.step-number')
   const title = root.querySelector('#step-title')
   const description = root.querySelector('.step-description')
@@ -23,7 +6,10 @@ export function createUiController({ root, states, signal, actions, stampDuratio
   const actionButtons = root.querySelectorAll('[data-card-action]')
   const actionContainer = root.querySelector('.card-actions')
   const endNotice = root.querySelector('.preview-end-notice')
+  const feedback = root.querySelector('.craft-feedback')
   const stamps = [...root.querySelectorAll('[data-craft-stamp]')]
+  let feedbackTimer = null
+  let lastState = null
 
   const hideActions = () => {
     actionButtons.forEach((button) => (button.hidden = true))
@@ -38,12 +24,25 @@ export function createUiController({ root, states, signal, actions, stampDuratio
     })
   }
   const apply = (content, hintText) => {
-    stepNumber.innerHTML = content[0]
-    title.textContent = content[1]
-    description.innerHTML = content[2]
+    stepNumber.innerHTML = content.number
+    title.textContent = content.title
+    description.textContent = content.description
     hint.innerHTML = `<span>操作提示</span>${hintText}`
     endNotice.hidden = true
     hideActions()
+  }
+
+  const showFeedback = (message) => {
+    if (!feedback || !message) return
+    window.clearTimeout(feedbackTimer)
+    feedback.textContent = message
+    feedback.hidden = false
+    feedback.classList.remove('is-showing')
+    requestAnimationFrame(() => feedback.classList.add('is-showing'))
+    feedbackTimer = window.setTimeout(() => {
+      feedback.classList.remove('is-showing')
+      feedback.hidden = true
+    }, feedbackDurationMs)
   }
 
   const stampLevelForState = (state) => {
@@ -70,37 +69,43 @@ export function createUiController({ root, states, signal, actions, stampDuratio
   }
 
   const setState = (state, progress = {}, meta = {}) => {
-    if (state === states.LINEART) apply(CONTENT.lineart, '长按龙首，让竹骨逐渐成形。')
-    else if (state === states.BAMBOO_BUILD) apply(CONTENT.bamboo, `竹骨成形 ${Math.round(progress.bamboo * 100)}%`)
-    else if (state === states.BAMBOO_COMPLETE) apply(CONTENT.bamboo, '扎骨完成，准备进入裱糊阶段。')
+    const stateChanged = state !== lastState
+    if (state === states.LINEART) apply(copy.steps.lineart, '识别竹篾与龙首比例，准备进入扎骨阶段。')
+    else if (state === states.BAMBOO_BUILD) apply(copy.steps.bamboo, progress.bamboo > 0 ? `持续长按关键区域，竹骨成形 ${Math.round(progress.bamboo * 100)}%` : '长按龙首关键区域，让竹骨逐段成形。')
+    else if (state === states.BAMBOO_COMPLETE) apply(copy.steps.bamboo, '扎骨完成，竹篾已形成龙头内部支撑。')
     else if (state === states.PAPER_COMPARE || state === states.PAPER_READY) {
       apply(
-        CONTENT.paper,
-        meta.hasSeenFullPaper
-          ? '已查看完整裱糊效果，可继续对比或完成本步骤。'
-          : '左右拖动滑杆，对比竹骨与裱糊效果。',
+        copy.steps.paper,
+        meta.hasSeenFullPaper ? '裱糊覆盖已达到完成范围。' : '从最左侧拖动把手，可左右来回比较竹骨与裱糊层。',
       )
-      if (meta.hasSeenFullPaper) showActions('paper-complete')
-    } else if (state === states.PAPER_COMPLETE) apply(CONTENT.paper, '裱糊完成，准备进行彩绘。')
-    else if (state === states.COLOR_PAINT) apply(CONTENT.paint, progress.paint > 0 ? `彩绘进度 ${Math.round(progress.paint * 100)}%` : '在龙首区域内滑动彩绘，完成80%后自动补全。')
-    else if (state === states.COLOR_COMPLETE) apply(CONTENT.paint, '彩绘完成')
-    else if (state === states.EYE_READY) apply(CONTENT.eye, '点击龙眼，唤醒火龙。')
-    else if (state === states.VIDEO_PLAYING) apply(CONTENT.video, '正在唤醒火龙……')
+    } else if (state === states.PAPER_COMPLETE) apply(copy.steps.paper, '裱糊完成，龙头已获得连续外形。')
+    else if (state === states.COLOR_PAINT) apply(copy.steps.paint, progress.paint > 0 ? '继续在有效区域内涂抹，达到覆盖范围后将自动补全。' : '在龙首区域内连续涂抹，画笔离开后返回仍可继续。')
+    else if (state === states.COLOR_COMPLETE) apply(copy.steps.paint, '彩绘完成，龙头的色彩与纹样已经补全。')
+    else if (state === states.EYE_READY) apply(copy.steps.eye, '点击龙眼，唤醒火龙。')
+    else if (state === states.VIDEO_PLAYING) apply(copy.steps.video, '正在唤醒火龙……')
     else if (state === states.AWAKEN_REVIEW) {
-      apply(CONTENT.video, '火龙已苏醒，查看龙首的四层成形过程。')
+      apply(copy.steps.video, '火龙已苏醒，点击按钮进入工艺总览。')
       showActions('review')
-    } else if (state === states.EXPLODE_TRANSITION) apply(CONTENT.explode, '四层工艺正在展开……')
+    } else if (state === states.EXPLODE_TRANSITION) apply(copy.steps.overview, '线稿、竹骨、裱糊和彩绘层正在展开……')
     else if (state === states.EXPLODE_VIEW) {
-      apply(CONTENT.explode, '左右微微摆动手机，或拖动画面查看制作层次。点击图层可查看工艺说明。')
+      apply(copy.steps.overview, '点击图层标签，查看每一层新增的结构与工艺细节。')
       showActions('overview', 'restart', 'end')
     } else if (state === states.LAYER_FOCUS) {
-      const layer = LAYER_CONTENT[meta.selectedLayer] ?? LAYER_CONTENT.color
-      apply(['工艺图层', layer[0], layer[1]], '再次点击当前标签或选择“返回全貌”。')
+      const layer = copy.layers[meta.selectedLayer] ?? copy.layers.color
+      apply({ number: '工艺图层', ...layer }, '查看画面中的局部标注；再次点击当前标签可返回全貌。')
       showActions('overview', 'restart', 'end')
     } else if (state === states.COMPLETED) {
-      apply(CONTENT.explode, '第一页体验已完成，可继续扫描其他模块。')
+      apply(copy.steps.overview, '第一页体验已完成，可继续扫描其他模块。')
       showActions('overview', 'restart', 'end')
     }
+    if (stateChanged) {
+      if (state === states.BAMBOO_COMPLETE) showFeedback(copy.feedback.bamboo)
+      else if (state === states.PAPER_COMPLETE) showFeedback(copy.feedback.paper)
+      else if (state === states.COLOR_COMPLETE) showFeedback(copy.feedback.paint)
+      else if (state === states.AWAKEN_REVIEW) showFeedback(copy.feedback.eye)
+      else if (state === states.EXPLODE_VIEW) showFeedback(copy.feedback.overview)
+    }
+    lastState = state
     updateStamps(state, meta.resetStamps)
   }
 
@@ -110,10 +115,12 @@ export function createUiController({ root, states, signal, actions, stampDuratio
   }
 
   actionButtons.forEach((button) => button.addEventListener('click', () => actions[button.dataset.cardAction]?.(), { signal }))
+  signal.addEventListener('abort', () => window.clearTimeout(feedbackTimer), { once: true })
 
   return {
     setState,
     updateProgress,
+    showFeedback,
     showVideoFailure() {
       showActions('retry', 'skip')
       hint.innerHTML = '<span>操作提示</span>视频未能播放，可重新播放或跳过。'

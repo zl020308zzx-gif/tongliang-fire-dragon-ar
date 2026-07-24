@@ -3,6 +3,7 @@ export function createVideoController({
   videoPlane,
   craftPlane,
   path,
+  maxDurationMs = 5000,
   signal,
   errorOutput,
   onEnded,
@@ -12,6 +13,24 @@ export function createVideoController({
   let status = 'idle'
   let playAttempt = 0
   let pausedByTracking = false
+  let maxDurationTimer = null
+
+  const clearMaxDurationTimer = () => {
+    window.clearTimeout(maxDurationTimer)
+    maxDurationTimer = null
+  }
+  const finishAtLimit = () => {
+    if (status !== 'playing') return
+    video.pause()
+    showCraft()
+    setStatus('ended')
+    onEnded()
+  }
+  const scheduleMaxDuration = () => {
+    clearMaxDurationTimer()
+    const remainingMs = Math.max(0, maxDurationMs - video.currentTime * 1000)
+    maxDurationTimer = window.setTimeout(finishAtLimit, remainingMs)
+  }
 
   const setStatus = (nextStatus) => {
     status = nextStatus
@@ -34,6 +53,7 @@ export function createVideoController({
 
   const fail = () => {
     if (status === 'failed') return
+    clearMaxDurationTimer()
     video.pause()
     showCraft()
     setStatus('failed')
@@ -47,6 +67,7 @@ export function createVideoController({
     video.pause()
     video.currentTime = 0
     pausedByTracking = false
+    clearMaxDurationTimer()
     errorOutput.hidden = true
     showCraft()
     setStatus('playing')
@@ -59,6 +80,7 @@ export function createVideoController({
     } catch {
       fail()
     }
+    scheduleMaxDuration()
   }
 
   video.addEventListener(
@@ -72,6 +94,7 @@ export function createVideoController({
     'ended',
     () => {
       if (status !== 'playing') return
+      clearMaxDurationTimer()
       showCraft()
       setStatus('ended')
       onEnded()
@@ -91,6 +114,7 @@ export function createVideoController({
     'visibilitychange',
     () => {
       if (document.hidden && status === 'playing') {
+        clearMaxDurationTimer()
         video.pause()
         setStatus('paused')
       } else if (!document.hidden && status === 'paused') {
@@ -100,15 +124,18 @@ export function createVideoController({
         } catch {
           fail()
         }
+        scheduleMaxDuration()
       }
     },
     { signal },
   )
+  signal.addEventListener('abort', clearMaxDurationTimer, { once: true })
 
   return {
     play,
     retry: play,
     skip() {
+      clearMaxDurationTimer()
       pausedByTracking = false
       video.pause()
       showCraft()
@@ -116,6 +143,7 @@ export function createVideoController({
       onEnded()
     },
     stop() {
+      clearMaxDurationTimer()
       playAttempt += 1
       pausedByTracking = false
       video.pause()
@@ -125,6 +153,7 @@ export function createVideoController({
     },
     pauseForTracking() {
       if (status !== 'playing' || video.ended) return false
+      clearMaxDurationTimer()
       video.pause()
       pausedByTracking = true
       setStatus('tracking-paused')
@@ -140,6 +169,7 @@ export function createVideoController({
       } catch {
         fail()
       }
+      scheduleMaxDuration()
       return true
     },
     getCurrentTime: () => video.currentTime,

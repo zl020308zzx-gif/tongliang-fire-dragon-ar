@@ -3,7 +3,6 @@ export function createArUiController({ root, signal, actions, scanMessage = '请
   const startScreen = root.querySelector('.ar-start-screen')
   const startButton = root.querySelector('[data-ar-action="start"]')
   const scanStatus = root.querySelector('.ar-scan-status')
-  const modeSelect = root.querySelector('.ar-mode-select')
   const lostDialog = root.querySelector('.ar-lost-dialog')
   const videoResume = root.querySelector('.ar-video-resume')
   const errorPanel = root.querySelector('.ar-error-panel')
@@ -14,8 +13,8 @@ export function createArUiController({ root, signal, actions, scanMessage = '请
   )
 
   const hideTransient = () => {
+    scanStatus.classList.remove('is-confirmed')
     scanStatus.hidden = true
-    modeSelect.hidden = true
     lostDialog.hidden = true
     videoResume.hidden = true
     errorPanel.hidden = true
@@ -39,19 +38,18 @@ export function createArUiController({ root, signal, actions, scanMessage = '请
       startScreen.hidden = true
       hideTransient()
       preview.classList.remove('is-craft-active')
-      scanStatus.textContent = '点击识别图左下角竹篾'
+      scanStatus.textContent = '识别成功｜竹骨成龙 · 点击识别图左下角竹篾'
       scanStatus.hidden = false
     },
     hideHotspot() {
       if (hotspotLabel) hotspotLabel.hidden = true
       scanStatus.hidden = true
     },
-    showModeSelect() {
+    showLiftGuide() {
       hideTransient()
-      modeSelect.hidden = false
-    },
-    hideModeSelect() {
-      modeSelect.hidden = true
+      scanStatus.textContent = '请缓慢抬起手机，体验火龙工艺展开'
+      scanStatus.classList.add('is-confirmed')
+      scanStatus.hidden = false
     },
     showPanelRising() {
       hideTransient()

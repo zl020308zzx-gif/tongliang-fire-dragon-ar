@@ -13,6 +13,7 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
   let requestedStates = null
   let showAllForDebug = false
   let holdCenter = null
+  let paperRatio = 0
   let hiddenReason = '尚未进入扎骨步骤'
   let bambooSuppressed = false
   let canvasHintVisible = false
@@ -103,13 +104,19 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
       eyeHint.style.setProperty('--eye-outer-line', `${hints.eye.outerLineWidthPx}px`)
       eyeHint.style.setProperty('--eye-pulse-duration', `${hints.eye.pulseDurationMs}ms`)
     }
+    updatePaperSlider(paperRatio)
     syncStateVisibility()
   }
 
   const updatePaperSlider = (ratio) => {
+    paperRatio = Math.min(1, Math.max(0, Number(ratio) || 0))
     if (renderInCanvas) return
     if (!bounds) return
-    const x = bounds.left + bounds.width * ratio
+    const handleInset = Math.min(hints.paper.handleSizePx / 2, bounds.width / 2)
+    const x = Math.min(
+      bounds.left + bounds.width - handleInset,
+      Math.max(bounds.left + handleInset, bounds.left + bounds.width * paperRatio),
+    )
     paperHint.style.left = `${x}px`
     paperHint.style.top = `${bounds.top}px`
     paperHint.style.height = `${bounds.height}px`
@@ -158,17 +165,17 @@ export function createInteractionHints({ root, config, canShowBambooHint, onHint
       if (!renderInCanvas) {
         ;[holdHint, paperHint, paintHint, eyeHint].forEach((element) => (element.hidden = false))
       }
-      canvasHintVisible = state === states.LINEART || state === states.BAMBOO_BUILD
+      canvasHintVisible = state === states.BAMBOO_BUILD
       hiddenReason = ''
       notifyHintVisibility()
       return
     }
-    if (bambooSuppressed && (state === states.LINEART || state === states.BAMBOO_BUILD)) {
+    if (bambooSuppressed && state === states.BAMBOO_BUILD) {
       showOnly()
       notifyHintVisibility()
       return
     }
-    if (state === states.LINEART || state === states.BAMBOO_BUILD) {
+    if (state === states.BAMBOO_BUILD) {
       if (!isValidBounds(bounds) || !isFinitePoint(holdCenter)) {
         hiddenReason ||= 'craftCanvas投影尚未就绪'
         showOnly()
