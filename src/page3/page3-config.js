@@ -4,6 +4,7 @@ const page3Asset = (path) => assetUrl(`assets/page3/${path}`)
 const markerAspect = 1491 / 1055
 const canvasWidth = 1.02
 const canvasHeight = canvasWidth * 1.5
+const page2MarkerAspect = 210 / 148
 
 export const PAGE3_STATES = Object.freeze({
   HIDDEN: 'PAGE3_HIDDEN',
@@ -72,10 +73,31 @@ export const PAGE3_CONFIG = {
     lostHoldDuration: 1500,
     recoverDuration: 300,
   },
+  foundation: {
+    rootPosition: [0, 0, 0],
+    rootRotation: [0, 0, 0],
+    rootScale: [1, 1, 1],
+    background: {
+      width: 1.02,
+      height: 1.53,
+      hingePosition: { x: 0, y: page2MarkerAspect / 2, z: 0.004 },
+      rotation: [78, 0, 0],
+      centerPosition: [0, 1.53 / 2, 0],
+      renderOrder: 300,
+    },
+    floor: {
+      width: 1,
+      depth: page2MarkerAspect,
+      position: [0, 0, 2 / 148],
+      rotation: [0, 0, 0],
+      renderOrder: -100,
+    },
+    readyRenderFrames: 2,
+  },
   layout: {
     width: canvasWidth,
     height: canvasHeight,
-    scenePosition: [0, 0, 0.012],
+    scenePosition: [0, 0, 0],
     sceneRotation: [0, 0, 0],
     drumPivot: { x: 0, y: -0.49, z: 0.075 },
     drumAssetOffset: { x: 0, y: 0.49, z: 0 },

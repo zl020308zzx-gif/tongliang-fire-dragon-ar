@@ -94,10 +94,28 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
         material="transparent: true; opacity: 0; side: double"></a-plane>
     </a-entity>
     <a-entity id="page3-anchor" visible="false">
-      <a-entity id="page3-scene-root" position="${vector(config.layout.scenePosition)}"
-        rotation="${vector(config.layout.sceneRotation)}">
-        ${fullPlane('page3-background-plane', 'background', config, config.z.background, config.renderOrder.background)}
-        ${fullPlane('page3-floor-plane', 'floor', config, config.z.floor, config.renderOrder.floor)}
+      <a-entity id="page3-foundation-root"
+        position="${vector(config.foundation.rootPosition)}"
+        rotation="${vector(config.foundation.rootRotation)}"
+        scale="${vector(config.foundation.rootScale)}">
+        <a-entity id="page3-floor-root" visible="false">
+          <a-image id="page3-floor-plane" data-page3-asset-key="floor"
+            width="${config.foundation.floor.width}" height="${config.foundation.floor.depth}"
+            position="${vector(config.foundation.floor.position)}"
+            rotation="${vector(config.foundation.floor.rotation)}"
+            data-render-order="${config.foundation.floor.renderOrder}"
+            material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: true; depthTest: true; side: double"></a-image>
+        </a-entity>
+        <a-entity id="page3-background-root" visible="false"
+          position="${vector(config.foundation.background.hingePosition)}"
+          rotation="${vector(config.foundation.background.rotation)}">
+          <a-entity id="page3-board-center" position="${vector(config.foundation.background.centerPosition)}">
+            <a-image id="page3-background-plane" data-page3-asset-key="background"
+              width="${config.foundation.background.width}" height="${config.foundation.background.height}"
+              position="0 0 0" data-render-order="${config.foundation.background.renderOrder}"
+              material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: true; depthTest: true; side: double"></a-image>
+            <a-entity id="page3-scene-root" position="${vector(config.layout.scenePosition)}"
+              rotation="${vector(config.layout.sceneRotation)}">
         ${fullPlane('page3-cloud-back', 'cloudBack', config, config.z.cloudBack, config.renderOrder.cloudBack)}
         ${fullPlane('page3-cloud-middle', 'cloudMiddle', config, config.z.cloudMiddle, config.renderOrder.cloudMiddle)}
         ${fullPlane('page3-title-plane', 'title', config, config.z.title, config.renderOrder.title)}
@@ -158,6 +176,9 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
           width="${config.layout.stageSafeArea.width * config.layout.width}"
           height="${config.layout.stageSafeArea.height * config.layout.height}"
           material="shader: flat; wireframe: true; color: #6dffc6; transparent: true; opacity: .78; depthWrite: false"></a-plane>
+            </a-entity>
+          </a-entity>
+        </a-entity>
       </a-entity>
     </a-entity>
   `
@@ -208,6 +229,19 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
     <p>鼓可点击 <b data-page3-debug-drum>false</b>｜击鼓次数 <b data-page3-debug-hits>0</b></p>
     <p>舞龙尺寸 <b data-page3-debug-dragon-size>—</b></p>
     <p>铁花尺寸 <b data-page3-debug-iron-size>—</b></p>
+    <p>bgTextureReady <b data-page3-debug-bg-texture>false</b></p>
+    <p>floorTextureReady <b data-page3-debug-floor-texture>false</b></p>
+    <p>drumTextureReady <b data-page3-debug-drum-texture>false</b></p>
+    <p>mounted bg/floor/drum <b data-page3-debug-mounted>false / false / false</b></p>
+    <p>visible bg/floor/drum <b data-page3-debug-foundation-visible>false / false / false</b></p>
+    <p>opacity bg/floor/drum <b data-page3-debug-foundation-opacity>0 / 0 / 0</b></p>
+    <p>scale bg/floor/drum <b data-page3-debug-foundation-scale>0 / 0 / 0</b></p>
+    <p>bgWorldPosition <b data-page3-debug-bg-world>—</b></p>
+    <p>floorWorldPosition <b data-page3-debug-floor-world>—</b></p>
+    <p>drumWorldPosition <b data-page3-debug-drum-world>—</b></p>
+    <p>targetFound <b data-page3-debug-target-found>false</b></p>
+    <p>page3RootVisible <b data-page3-debug-root-visible>false</b></p>
+    <p>foundation frames <b data-page3-debug-foundation-frames>0 / ${config.foundation.readyRenderFrames}</b></p>
     <p>FPS <b data-page3-debug-fps>0</b></p>
     <button type="button" data-page3-debug-action="simulate">模拟识别</button>
     <button type="button" data-page3-debug-action="drum">模拟击鼓</button>
@@ -260,6 +294,9 @@ export function createPage3Experience({
   const abortController = new AbortController()
   const { signal } = abortController
   const preloaderSession = preloader || createPage3Preloader({ root, config, debug })
+  const foundationRoot = root.querySelector('#page3-foundation-root')
+  const backgroundRoot = root.querySelector('#page3-background-root')
+  const floorRoot = root.querySelector('#page3-floor-root')
   const sceneRoot = root.querySelector('#page3-scene-root')
   const background = root.querySelector('#page3-background-plane')
   const floor = root.querySelector('#page3-floor-plane')
@@ -271,6 +308,7 @@ export function createPage3Experience({
   const stageFront = root.querySelector('#page3-stage-front')
   const stageLights = root.querySelector('#page3-stage-lights')
   const drumRoot = root.querySelector('#page3-drum-root')
+  const drumPlane = root.querySelector('#page3-drum-plane')
   const drumHit = root.querySelector('#page3-drum-hit')
   const pearlRoot = root.querySelector('#page3-pearl-root')
   const dragonPlane = root.querySelector('#page3-dragon-plane')
@@ -328,6 +366,8 @@ export function createPage3Experience({
   let stageAssetsReady = false
   let dragonReady = false
   let ironflowerReady = false
+  let foundationRenderFrames = 0
+  let foundationReady = false
   let destroyed = false
   let stateFlags = new Set()
   let pointerStart = null
@@ -335,6 +375,7 @@ export function createPage3Experience({
   let fpsFrames = 0
   let fps = 0
   let lifecycle
+  const foundationWarnings = new Set()
   let visibilityPaused = false
   const audioFades = new Map()
   const mediaPausedForTracking = new Set()
@@ -485,9 +526,237 @@ export function createPage3Experience({
     if (failedPaths.length) showError(`部分资源加载失败：${failedPaths.join('、')}`)
     renderDebug()
   }
+  const setTransform = (entity, { position, rotation, scale } = {}) => {
+    if (!entity?.object3D) return
+    if (position) {
+      entity.object3D.position.set(...position)
+      entity.setAttribute('position', vector(position))
+    }
+    if (rotation) {
+      entity.object3D.rotation.set(...rotation.map((value) => THREE.MathUtils.degToRad(value)))
+      entity.setAttribute('rotation', vector(rotation))
+    }
+    if (scale) {
+      entity.object3D.scale.set(...scale)
+      entity.setAttribute('scale', vector(scale))
+    }
+    entity.object3D.updateMatrixWorld(true)
+  }
+
+  const getMaterialOpacity = (entity) => {
+    const values = []
+    entity?.object3D?.traverse((object) => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      materials.filter(Boolean).forEach((material) => values.push(Number(material.opacity)))
+    })
+    const finiteValues = values.filter(Number.isFinite)
+    if (finiteValues.length) return Math.max(...finiteValues)
+    const material = entity?.getAttribute?.('material')
+    return Number.isFinite(Number(material?.opacity)) ? Number(material.opacity) : 0
+  }
+
+  const getWorldVector = (entity, method) => {
+    const output = new THREE.Vector3()
+    if (!entity?.object3D?.[method]) return [NaN, NaN, NaN]
+    entity.object3D.updateWorldMatrix(true, false)
+    entity.object3D[method](output)
+    return output.toArray()
+  }
+
+  const isTextureReady = (assetKey, entity) => {
+    const assetEntry = PAGE3_IMAGE_ENTRIES.find(([, key]) => key === assetKey)
+    const image = assetEntry ? root.querySelector(`#${assetEntry[0]}`) : null
+    if (!(image instanceof HTMLImageElement) || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      return false
+    }
+    let bound = false
+    entity?.object3D?.traverse((object) => {
+      if (bound) return
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      bound = materials.filter(Boolean).some((material) => {
+        const mapImage = material.map?.image
+        return mapImage === image ||
+          (mapImage?.currentSrc && image.currentSrc && mapImage.currentSrc === image.currentSrc) ||
+          (mapImage?.src && image.src && mapImage.src === image.src)
+      })
+    })
+    return bound
+  }
+
+  const isMountedUnderAnchor = (entity) =>
+    Boolean(entity && anchor.contains(entity) && entity.object3D?.parent)
+
+  const isActuallyVisible = (...entities) =>
+    entities.every((entity) => entity?.getAttribute('visible') !== false && entity?.object3D?.visible !== false)
+
+  const isPositiveFiniteScale = (values) =>
+    values.every((value) => Number.isFinite(value) && Math.abs(value) > 1e-6)
+
+  const getFoundationDiagnostics = () => {
+    const bgScale = getWorldVector(backgroundRoot, 'getWorldScale')
+    const floorScale = getWorldVector(floor, 'getWorldScale')
+    const drumScale = getWorldVector(drumRoot, 'getWorldScale')
+    const bgWorldPosition = getWorldVector(background, 'getWorldPosition')
+    const floorWorldPosition = getWorldVector(floor, 'getWorldPosition')
+    const drumWorldPosition = getWorldVector(drumRoot, 'getWorldPosition')
+    return {
+      bgTextureReady: isTextureReady('background', background),
+      floorTextureReady: isTextureReady('floor', floor),
+      drumTextureReady: isTextureReady('drum', drumPlane),
+      bgMounted: isMountedUnderAnchor(background),
+      floorMounted: isMountedUnderAnchor(floor),
+      drumMounted: isMountedUnderAnchor(drumPlane),
+      bgVisible: isActuallyVisible(anchor, foundationRoot, backgroundRoot, background),
+      floorVisible: isActuallyVisible(anchor, foundationRoot, floorRoot, floor),
+      drumVisible: isActuallyVisible(anchor, foundationRoot, backgroundRoot, sceneRoot, drumRoot, drumPlane),
+      bgOpacity: getMaterialOpacity(background),
+      floorOpacity: getMaterialOpacity(floor),
+      drumOpacity: getMaterialOpacity(drumPlane),
+      bgScale,
+      floorScale,
+      drumScale,
+      bgWorldPosition,
+      floorWorldPosition,
+      drumWorldPosition,
+      currentPage3State: state,
+      targetFound: tracked,
+      page3RootVisible: isActuallyVisible(anchor, foundationRoot),
+    }
+  }
+
+  const foundationIsRenderable = (diagnostics) =>
+    diagnostics.bgTextureReady &&
+    diagnostics.floorTextureReady &&
+    diagnostics.drumTextureReady &&
+    diagnostics.bgMounted &&
+    diagnostics.floorMounted &&
+    diagnostics.drumMounted &&
+    diagnostics.bgVisible &&
+    diagnostics.floorVisible &&
+    diagnostics.drumVisible &&
+    diagnostics.bgOpacity > 0 &&
+    diagnostics.floorOpacity > 0 &&
+    diagnostics.drumOpacity > 0 &&
+    isPositiveFiniteScale(diagnostics.bgScale) &&
+    isPositiveFiniteScale(diagnostics.floorScale) &&
+    isPositiveFiniteScale(diagnostics.drumScale) &&
+    diagnostics.bgWorldPosition.every(Number.isFinite) &&
+    diagnostics.floorWorldPosition.every(Number.isFinite) &&
+    diagnostics.drumWorldPosition.every(Number.isFinite) &&
+    diagnostics.targetFound &&
+    diagnostics.page3RootVisible
+
+  const warnFoundationProblems = (diagnostics) => {
+    const problems = Object.entries({
+      bgTextureReady: diagnostics.bgTextureReady,
+      floorTextureReady: diagnostics.floorTextureReady,
+      drumTextureReady: diagnostics.drumTextureReady,
+      bgMounted: diagnostics.bgMounted,
+      floorMounted: diagnostics.floorMounted,
+      drumMounted: diagnostics.drumMounted,
+      bgVisible: diagnostics.bgVisible,
+      floorVisible: diagnostics.floorVisible,
+      drumVisible: diagnostics.drumVisible,
+      bgOpacity: diagnostics.bgOpacity > 0,
+      floorOpacity: diagnostics.floorOpacity > 0,
+      drumOpacity: diagnostics.drumOpacity > 0,
+      bgScale: isPositiveFiniteScale(diagnostics.bgScale),
+      floorScale: isPositiveFiniteScale(diagnostics.floorScale),
+      drumScale: isPositiveFiniteScale(diagnostics.drumScale),
+      bgWorldPosition: diagnostics.bgWorldPosition.every(Number.isFinite),
+      floorWorldPosition: diagnostics.floorWorldPosition.every(Number.isFinite),
+      drumWorldPosition: diagnostics.drumWorldPosition.every(Number.isFinite),
+      page3RootVisible: diagnostics.page3RootVisible,
+    }).filter(([, valid]) => !valid)
+    problems.forEach(([problem]) => {
+      if (foundationWarnings.has(problem)) return
+      foundationWarnings.add(problem)
+      console.warn(`[page3] foundation not renderable: ${problem}`, diagnostics)
+    })
+  }
+
+  const applyFoundationTransforms = () => {
+    setTransform(foundationRoot, {
+      position: config.foundation.rootPosition,
+      rotation: config.foundation.rootRotation,
+      scale: config.foundation.rootScale,
+    })
+    setTransform(backgroundRoot, {
+      position: [
+        config.foundation.background.hingePosition.x,
+        config.foundation.background.hingePosition.y,
+        config.foundation.background.hingePosition.z,
+      ],
+      rotation: config.foundation.background.rotation,
+      scale: [1, 1, 1],
+    })
+    setTransform(floor, {
+      position: config.foundation.floor.position,
+      rotation: config.foundation.floor.rotation,
+      scale: [1, 1, 1],
+    })
+    setTransform(sceneRoot, {
+      position: config.layout.scenePosition,
+      rotation: config.layout.sceneRotation,
+      scale: [1, 1, 1],
+    })
+    setTransform(drumRoot, {
+      position: [config.layout.drumPivot.x, config.layout.drumPivot.y, config.layout.drumPivot.z],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    })
+  }
+
+  const showFoundation = () => {
+    applyFoundationTransforms()
+    setVisible(foundationRoot, true)
+    setVisible(backgroundRoot, true)
+    setVisible(floorRoot, true)
+    setVisible(sceneRoot, true)
+    setVisible(background, true)
+    setVisible(floor, true)
+    setVisible(title, true)
+    setVisible(cloudBack, true)
+    setVisible(cloudMiddle, true)
+    setVisible(cloudFront, true)
+    setVisible(drumRoot, true)
+    setVisible(drumPlane, true)
+    setOpacity(background, 1)
+    setOpacity(floor, 1)
+    setOpacity(title, 1)
+    setOpacity(cloudBack, config.clouds.back.opacityMin)
+    setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
+    setOpacity(cloudFront, config.clouds.front.opacityMin)
+    setOpacity(drumPlane, 1)
+    applyRenderOrder(background, config.foundation.background.renderOrder)
+    applyRenderOrder(floor, config.foundation.floor.renderOrder)
+    applyRenderOrder(drumPlane, config.renderOrder.drum)
+  }
+
+  const updateFoundationGate = () => {
+    showFoundation()
+    const diagnostics = getFoundationDiagnostics()
+    if (foundationIsRenderable(diagnostics)) {
+      foundationRenderFrames += 1
+      foundationWarnings.clear()
+    } else {
+      foundationRenderFrames = 0
+      if (stateElapsed >= 750) warnFoundationProblems(diagnostics)
+    }
+    foundationReady = foundationRenderFrames >= config.foundation.readyRenderFrames
+    renderDebug(diagnostics)
+    return foundationReady
+  }
+
   const unsubscribePreloader = preloaderSession.subscribe(bindReadyAssets)
 
   const resetVisuals = () => {
+    foundationRenderFrames = 0
+    foundationReady = false
+    applyFoundationTransforms()
+    setVisible(foundationRoot, true)
+    setVisible(backgroundRoot, false)
+    setVisible(floorRoot, false)
     setVisible(sceneRoot, true)
     setVisible(background, true)
     setVisible(floor, true)
@@ -499,6 +768,7 @@ export function createPage3Experience({
     setVisible(stageFront, false)
     setVisible(stageLights, false)
     setVisible(drumRoot, false)
+    setVisible(drumPlane, false)
     setVisible(drumHit, false)
     setVisible(pearlRoot, false)
     setVisible(dragonPlane, false)
@@ -512,6 +782,10 @@ export function createPage3Experience({
     setOpacity(dragonPlane, 0)
     setOpacity(ironflowerPlane, 0)
     setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 0)
+    setOpacity(cloudBack, 0)
+    setOpacity(cloudMiddle, 0)
+    setOpacity(cloudFront, 0)
+    setOpacity(drumPlane, 0)
     drumRoot.object3D.position.set(
       config.layout.drumPivot.x,
       config.layout.drumPivot.y,
@@ -541,9 +815,9 @@ export function createPage3Experience({
   const updatePrompt = () => {
     let text = ''
     if (state === PAGE3_STATES.READY) {
-      text = stageAssetsReady && stateElapsed >= config.durations.initialSecondaryDelayMs
+      text = foundationReady && stageAssetsReady && stateElapsed >= config.durations.initialSecondaryDelayMs
         ? PAGE3_CONTENT.ready.prompt
-        : '正在准备火龙舞台…'
+        : '正在唤醒火龙舞台……'
     } else if (state === PAGE3_STATES.WAIT_PEARL) text = PAGE3_CONTENT.waits.pearl
     else if (state === PAGE3_STATES.WAIT_DRAGON) {
       text = dragonReady ? PAGE3_CONTENT.waits.dragon : '舞龙影像正在加载…'
@@ -568,7 +842,12 @@ export function createPage3Experience({
       tracked &&
       !suspended &&
       (
-        (state === PAGE3_STATES.READY && stateElapsed >= config.durations.initialSecondaryDelayMs && stageAssetsReady) ||
+        (
+          state === PAGE3_STATES.READY &&
+          foundationReady &&
+          stateElapsed >= config.durations.initialSecondaryDelayMs &&
+          stageAssetsReady
+        ) ||
         state === PAGE3_STATES.WAIT_PEARL ||
         (state === PAGE3_STATES.WAIT_DRAGON && dragonReady) ||
         (state === PAGE3_STATES.WAIT_CLIMAX && ironflowerReady)
@@ -580,13 +859,34 @@ export function createPage3Experience({
     updatePrompt()
   }
 
-  function renderDebug() {
+  function renderDebug(currentDiagnostics = null) {
     if (!debug) return
+    const diagnostics = currentDiagnostics || getFoundationDiagnostics()
+    const formatNumber = (value) => Number.isFinite(value) ? value.toFixed(3) : 'NaN'
+    const formatVector = (values) => values.map(formatNumber).join(', ')
     root.querySelector('[data-page3-debug-state]').textContent = state
     root.querySelector('[data-page3-debug-tracked]').textContent = String(tracked)
     root.querySelector('[data-page3-debug-critical]').textContent = String(criticalReady)
     root.querySelector('[data-page3-debug-deferred]').textContent = String(deferredSettled)
     root.querySelector('[data-page3-debug-hits]').textContent = String(drumHitCount)
+    root.querySelector('[data-page3-debug-bg-texture]').textContent = String(diagnostics.bgTextureReady)
+    root.querySelector('[data-page3-debug-floor-texture]').textContent = String(diagnostics.floorTextureReady)
+    root.querySelector('[data-page3-debug-drum-texture]').textContent = String(diagnostics.drumTextureReady)
+    root.querySelector('[data-page3-debug-mounted]').textContent =
+      `${diagnostics.bgMounted} / ${diagnostics.floorMounted} / ${diagnostics.drumMounted}`
+    root.querySelector('[data-page3-debug-foundation-visible]').textContent =
+      `${diagnostics.bgVisible} / ${diagnostics.floorVisible} / ${diagnostics.drumVisible}`
+    root.querySelector('[data-page3-debug-foundation-opacity]').textContent =
+      `${formatNumber(diagnostics.bgOpacity)} / ${formatNumber(diagnostics.floorOpacity)} / ${formatNumber(diagnostics.drumOpacity)}`
+    root.querySelector('[data-page3-debug-foundation-scale]').textContent =
+      `${formatVector(diagnostics.bgScale)} / ${formatVector(diagnostics.floorScale)} / ${formatVector(diagnostics.drumScale)}`
+    root.querySelector('[data-page3-debug-bg-world]').textContent = formatVector(diagnostics.bgWorldPosition)
+    root.querySelector('[data-page3-debug-floor-world]').textContent = formatVector(diagnostics.floorWorldPosition)
+    root.querySelector('[data-page3-debug-drum-world]').textContent = formatVector(diagnostics.drumWorldPosition)
+    root.querySelector('[data-page3-debug-target-found]').textContent = String(diagnostics.targetFound)
+    root.querySelector('[data-page3-debug-root-visible]').textContent = String(diagnostics.page3RootVisible)
+    root.querySelector('[data-page3-debug-foundation-frames]').textContent =
+      `${foundationRenderFrames} / ${config.foundation.readyRenderFrames}`
     root.querySelector('[data-page3-debug-fps]').textContent = String(fps)
   }
 
@@ -613,11 +913,14 @@ export function createPage3Experience({
     }
 
     if (state === PAGE3_STATES.LOADING) {
-      loadingText.textContent = criticalReady ? '火舞舞台已准备' : '正在准备火舞舞台'
+      loadingText.textContent = '正在唤醒火龙舞台……'
       resetVisuals()
     } else if (state === PAGE3_STATES.READY) {
       stopStageMedia()
       resetVisuals()
+      showFoundation()
+      foundationRenderFrames = config.foundation.readyRenderFrames
+      foundationReady = true
       preloaderSession.loadDeferred().catch(() => {})
     } else if (state === PAGE3_STATES.STAGE_BUILDING) {
       setVisible(stageBack, true)
@@ -1048,16 +1351,12 @@ export function createPage3Experience({
     updateDrumAnimation(delta)
 
     if (state === PAGE3_STATES.LOADING) {
-      if (criticalReady) setPage3State(PAGE3_STATES.READY)
+      if (criticalReady && updateFoundationGate()) setPage3State(PAGE3_STATES.READY)
       return
     }
     if (state === PAGE3_STATES.READY) {
-      const reveal = easeOutCubic(stateElapsed / 420)
-      setOpacity(background, reveal)
-      setOpacity(floor, reveal)
-      setOpacity(title, reveal)
       if (stateElapsed >= config.durations.initialSecondaryDelayMs) {
-        ;[cloudBack, cloudMiddle, cloudFront, stageBack, drumRoot].forEach((entity) => setVisible(entity, true))
+        setVisible(stageBack, true)
         setOpacity(stageBack, 0.2)
       }
       updateDrumEnabled()
