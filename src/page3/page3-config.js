@@ -5,6 +5,8 @@ const markerAspect = 1491 / 1055
 const canvasWidth = 1.02
 const canvasHeight = canvasWidth * 1.5
 const page2MarkerAspect = 210 / 148
+const page2FloorClearance = 2 / 148
+const floorWidthForOriginalRatio = page2MarkerAspect * (2 / 3)
 
 export const PAGE3_STATES = Object.freeze({
   HIDDEN: 'PAGE3_HIDDEN',
@@ -51,6 +53,8 @@ export const PAGE3_CONFIG = {
   },
   durations: {
     trackingStableMs: 500,
+    placementGuideHoldMs: 1100,
+    foundationOpenMs: 1000,
     initialSecondaryDelayMs: 300,
     stageBuildingMs: 3000,
     pearlGuidingMs: 3000,
@@ -74,34 +78,67 @@ export const PAGE3_CONFIG = {
     recoverDuration: 300,
   },
   foundation: {
-    rootPosition: [0, 0, 0],
-    rootRotation: [0, 0, 0],
-    rootScale: [1, 1, 1],
-    background: {
-      width: 1.02,
-      height: 1.53,
-      hingePosition: { x: 0, y: page2MarkerAspect / 2, z: 0.004 },
-      rotation: [78, 0, 0],
-      centerPosition: [0, 1.53 / 2, 0],
-      renderOrder: 300,
-    },
-    floor: {
-      width: 1,
-      depth: page2MarkerAspect,
-      position: [0, 0, 2 / 148],
-      rotation: [0, 0, 0],
-      renderOrder: -100,
-    },
     readyRenderFrames: 2,
   },
   layout: {
     width: canvasWidth,
     height: canvasHeight,
-    scenePosition: [0, 0, 0],
-    sceneRotation: [0, 0, 0],
-    drumPivot: { x: 0, y: -0.49, z: 0.075 },
+    // Page3 的空间配置统一使用角度；写入 Three.js 时再转换为弧度。
+    root: {
+      position: [0, 0, 0],
+      rotationDegrees: [0, 0, 0],
+      scale: [1, 1, 1],
+    },
+    floor: {
+      width: floorWidthForOriginalRatio,
+      depth: page2MarkerAspect,
+      position: [0, 0, page2FloorClearance],
+      rotationDegrees: [0, 0, 0],
+      scale: [1, 1, 1],
+      renderOrder: -100,
+    },
+    backboardHinge: {
+      position: [0, page2MarkerAspect / 2, 0.004],
+      rotationStartDegrees: [0, 0, 0],
+      rotationEndDegrees: [90, 0, 0],
+      scale: [1, 1, 1],
+    },
+    backgroundBoard: {
+      width: canvasWidth,
+      height: canvasHeight,
+      position: [0, canvasHeight / 2, 0],
+      rotationDegrees: [0, 0, 0],
+      scale: [1, 1, 1],
+      renderOrder: 300,
+    },
+    stageRoot: {
+      position: [0, page2MarkerAspect / 2 - 0.11, canvasHeight / 2],
+      rotationDegrees: [90, 0, 0],
+      scale: [1, 1, 1],
+    },
+    drumPivot: {
+      position: [0, -0.4, 0.3],
+      rotationDegrees: [90, 0, 0],
+      scale: [1, 1, 1],
+    },
     drumAssetOffset: { x: 0, y: 0.49, z: 0 },
-    drumHotspot: { x: 0.5, y: 0.805, width: 0.38, height: 0.23 },
+    drumHotspot: {
+      position: [0, 0, 0.012],
+      width: 0.38 * canvasWidth,
+      height: 0.23 * canvasHeight,
+    },
+    cloudBack: {
+      position: [0, 0, 0.009],
+      scale: [1, 1, 1],
+    },
+    cloudMiddle: {
+      position: [0, 0, 0.015],
+      scale: [0.97, 0.97, 1],
+    },
+    cloudFront: {
+      position: [0, -0.03, 0.15],
+      scale: [0.9, 0.9, 1],
+    },
     pearlPivot: { x: 0, y: 0.035, z: 0.061 },
     pearlAssetOffset: { x: 0, y: -0.035, z: 0 },
     pearlPath: [

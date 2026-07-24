@@ -86,8 +86,6 @@ const fullPlane = (id, key, config, z, renderOrder, extra = '', position = [0, 0
 
 export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
   const hotspot = config.layout.drumHotspot
-  const hotspotX = (hotspot.x - 0.5) * config.layout.width
-  const hotspotY = (0.5 - hotspot.y) * config.layout.height
   return `
     <a-entity id="page3-target" mindar-image-target="targetIndex: ${config.targetIndex}">
       <a-plane id="page3-marker-plane" width="1" height="${config.markerAspect}" position="0 0 .003"
@@ -95,89 +93,123 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
     </a-entity>
     <a-entity id="page3-anchor" visible="false">
       <a-entity id="page3-foundation-root"
-        position="${vector(config.foundation.rootPosition)}"
-        rotation="${vector(config.foundation.rootRotation)}"
-        scale="${vector(config.foundation.rootScale)}">
-        <a-entity id="page3-floor-root" visible="false">
+        position="${vector(config.layout.root.position)}"
+        rotation="${vector(config.layout.root.rotationDegrees)}"
+        scale="${vector(config.layout.root.scale)}">
+        <a-entity id="page3-floor-root" visible="false"
+          position="0 0 0" rotation="0 0 0" scale="1 1 1">
           <a-image id="page3-floor-plane" data-page3-asset-key="floor"
-            width="${config.foundation.floor.width}" height="${config.foundation.floor.depth}"
-            position="${vector(config.foundation.floor.position)}"
-            rotation="${vector(config.foundation.floor.rotation)}"
-            data-render-order="${config.foundation.floor.renderOrder}"
+            width="${config.layout.floor.width}" height="${config.layout.floor.depth}"
+            position="${vector(config.layout.floor.position)}"
+            rotation="${vector(config.layout.floor.rotationDegrees)}"
+            scale="${vector(config.layout.floor.scale)}"
+            data-render-order="${config.layout.floor.renderOrder}"
             material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: true; depthTest: true; side: double"></a-image>
-        </a-entity>
-        <a-entity id="page3-background-root" visible="false"
-          position="${vector(config.foundation.background.hingePosition)}"
-          rotation="${vector(config.foundation.background.rotation)}">
-          <a-entity id="page3-board-center" position="${vector(config.foundation.background.centerPosition)}">
-            <a-image id="page3-background-plane" data-page3-asset-key="background"
-              width="${config.foundation.background.width}" height="${config.foundation.background.height}"
-              position="0 0 0" data-render-order="${config.foundation.background.renderOrder}"
-              material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: true; depthTest: true; side: double"></a-image>
-            <a-entity id="page3-scene-root" position="${vector(config.layout.scenePosition)}"
-              rotation="${vector(config.layout.sceneRotation)}">
-        ${fullPlane('page3-cloud-back', 'cloudBack', config, config.z.cloudBack, config.renderOrder.cloudBack)}
-        ${fullPlane('page3-cloud-middle', 'cloudMiddle', config, config.z.cloudMiddle, config.renderOrder.cloudMiddle)}
-        ${fullPlane('page3-title-plane', 'title', config, config.z.title, config.renderOrder.title)}
-        ${fullPlane('page3-stage-back', 'stageBack', config, config.z.stageBack, config.renderOrder.stageBack)}
-        <a-image id="page3-stage-lights" data-page3-asset-key="stageLights"
-          position="${vector(config.layout.stageLights.position)}"
-          width="${config.layout.stageLights.width}" height="${config.layout.stageLights.height}"
-          data-render-order="${config.renderOrder.lights}"
-          material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-image>
-        <a-video id="page3-ironflower-plane" position="${vector(config.layout.ironflowerVideo.position)}"
-          width="${config.layout.ironflowerVideo.width}" height="${config.layout.ironflowerVideo.maxHeight}"
-          data-render-order="${config.renderOrder.ironflowerVideo}" visible="false"
-          material="shader: flat; transparent: true; alphaTest: .003; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-video>
-        <a-video id="page3-dragon-plane" position="${vector(config.layout.dragonVideo.position)}"
-          width="${config.layout.dragonVideo.width}" height="${config.layout.dragonVideo.maxHeight}"
-          data-render-order="${config.renderOrder.dragonVideo}" visible="false"
-          material="shader: flat; transparent: true; alphaTest: .003; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-video>
-        ${fullPlane('page3-cloud-front', 'cloudFront', config, config.z.cloudFront, config.renderOrder.cloudFront)}
-        <a-entity id="page3-pearl-root" position="${vector([
-          config.layout.pearlPivot.x,
-          config.layout.pearlPivot.y,
-          config.layout.pearlPivot.z,
-        ])}" visible="false">
-          ${fullPlane(
-            'page3-pearl-plane',
-            'pearl',
-            config,
-            config.layout.pearlAssetOffset.z,
-            config.renderOrder.pearl,
-            '',
-            config.layout.pearlAssetOffset,
-          )}
-        </a-entity>
-        ${fullPlane('page3-stage-front', 'stageFront', config, config.z.stageFront, config.renderOrder.stageFront)}
-        <a-entity id="page3-drum-root" position="${vector([
-          config.layout.drumPivot.x,
-          config.layout.drumPivot.y,
-          config.layout.drumPivot.z,
-        ])}">
-          ${fullPlane(
-            'page3-drum-plane',
-            'drum',
-            config,
-            config.layout.drumAssetOffset.z,
-            config.renderOrder.drum,
-            '',
-            config.layout.drumAssetOffset,
-          )}
-        </a-entity>
-        <a-plane id="page3-drum-hit" position="${hotspotX} ${hotspotY} ${config.z.effects}"
-          width="${hotspot.width * config.layout.width}" height="${hotspot.height * config.layout.height}"
-          material="shader: flat; transparent: true; opacity: ${debug ? 0.2 : 0.001}; wireframe: ${debug}; color: #ffd268; depthWrite: false; side: double"></a-plane>
-        <a-entity id="page3-effect-root" position="0 0 ${config.z.effects}"></a-entity>
-        <a-plane id="page3-debug-stage-safe" visible="${debug}"
-          position="${(config.layout.stageSafeArea.x + config.layout.stageSafeArea.width / 2 - 0.5) * config.layout.width}
-            ${(0.5 - config.layout.stageSafeArea.y - config.layout.stageSafeArea.height / 2) * config.layout.height}
-            ${config.z.effects + 0.001}"
-          width="${config.layout.stageSafeArea.width * config.layout.width}"
-          height="${config.layout.stageSafeArea.height * config.layout.height}"
-          material="shader: flat; wireframe: true; color: #6dffc6; transparent: true; opacity: .78; depthWrite: false"></a-plane>
-            </a-entity>
+          <a-entity id="page3-drum-root"
+            position="${vector(config.layout.drumPivot.position)}"
+            rotation="${vector(config.layout.drumPivot.rotationDegrees)}"
+            scale="${vector(config.layout.drumPivot.scale)}" visible="false">
+            ${fullPlane(
+              'page3-drum-plane',
+              'drum',
+              config,
+              config.layout.drumAssetOffset.z,
+              config.renderOrder.drum,
+              '',
+              config.layout.drumAssetOffset,
+            )}
+            <a-plane id="page3-drum-hit"
+              position="${vector(hotspot.position)}"
+              width="${hotspot.width}" height="${hotspot.height}"
+              material="shader: flat; transparent: true; opacity: ${debug ? 0.2 : 0.001}; wireframe: ${debug}; color: #ffd268; depthWrite: false; side: double"></a-plane>
           </a-entity>
+        </a-entity>
+
+        <a-entity id="page3-background-root" visible="false"
+          position="${vector(config.layout.backboardHinge.position)}"
+          rotation="${vector(config.layout.backboardHinge.rotationStartDegrees)}"
+          scale="${vector(config.layout.backboardHinge.scale)}">
+          <a-entity id="page3-board-center"
+            position="${vector(config.layout.backgroundBoard.position)}"
+            rotation="${vector(config.layout.backgroundBoard.rotationDegrees)}"
+            scale="${vector(config.layout.backgroundBoard.scale)}">
+            <a-image id="page3-background-plane" data-page3-asset-key="background"
+              width="${config.layout.backgroundBoard.width}" height="${config.layout.backgroundBoard.height}"
+              position="0 0 0" data-render-order="${config.layout.backgroundBoard.renderOrder}"
+              material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: true; depthTest: true; side: double"></a-image>
+            ${fullPlane(
+              'page3-cloud-back',
+              'cloudBack',
+              config,
+              config.layout.cloudBack.position[2],
+              config.renderOrder.cloudBack,
+              `scale="${vector(config.layout.cloudBack.scale)}"`,
+              config.layout.cloudBack.position,
+            )}
+            ${fullPlane('page3-title-plane', 'title', config, config.z.title, config.renderOrder.title)}
+          </a-entity>
+        </a-entity>
+
+        <a-entity id="page3-stage-root" visible="false"
+          position="${vector(config.layout.stageRoot.position)}"
+          rotation="${vector(config.layout.stageRoot.rotationDegrees)}"
+          scale="${vector(config.layout.stageRoot.scale)}">
+          ${fullPlane(
+            'page3-cloud-middle',
+            'cloudMiddle',
+            config,
+            config.layout.cloudMiddle.position[2],
+            config.renderOrder.cloudMiddle,
+            `scale="${vector(config.layout.cloudMiddle.scale)}"`,
+            config.layout.cloudMiddle.position,
+          )}
+          ${fullPlane('page3-stage-back', 'stageBack', config, config.z.stageBack, config.renderOrder.stageBack)}
+          <a-image id="page3-stage-lights" data-page3-asset-key="stageLights"
+            position="${vector(config.layout.stageLights.position)}"
+            width="${config.layout.stageLights.width}" height="${config.layout.stageLights.height}"
+            data-render-order="${config.renderOrder.lights}"
+            material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-image>
+          <a-video id="page3-ironflower-plane" position="${vector(config.layout.ironflowerVideo.position)}"
+            width="${config.layout.ironflowerVideo.width}" height="${config.layout.ironflowerVideo.maxHeight}"
+            data-render-order="${config.renderOrder.ironflowerVideo}" visible="false"
+            material="shader: flat; transparent: true; alphaTest: .003; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-video>
+          <a-video id="page3-dragon-plane" position="${vector(config.layout.dragonVideo.position)}"
+            width="${config.layout.dragonVideo.width}" height="${config.layout.dragonVideo.maxHeight}"
+            data-render-order="${config.renderOrder.dragonVideo}" visible="false"
+            material="shader: flat; transparent: true; alphaTest: .003; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-video>
+          <a-entity id="page3-pearl-root" position="${vector([
+            config.layout.pearlPivot.x,
+            config.layout.pearlPivot.y,
+            config.layout.pearlPivot.z,
+          ])}" visible="false">
+            ${fullPlane(
+              'page3-pearl-plane',
+              'pearl',
+              config,
+              config.layout.pearlAssetOffset.z,
+              config.renderOrder.pearl,
+              '',
+              config.layout.pearlAssetOffset,
+            )}
+          </a-entity>
+          ${fullPlane('page3-stage-front', 'stageFront', config, config.z.stageFront, config.renderOrder.stageFront)}
+          ${fullPlane(
+            'page3-cloud-front',
+            'cloudFront',
+            config,
+            config.layout.cloudFront.position[2],
+            config.renderOrder.cloudFront,
+            `scale="${vector(config.layout.cloudFront.scale)}"`,
+            config.layout.cloudFront.position,
+          )}
+          <a-entity id="page3-effect-root" position="0 0 ${config.z.effects}"></a-entity>
+          <a-plane id="page3-debug-stage-safe" visible="${debug}"
+            position="${(config.layout.stageSafeArea.x + config.layout.stageSafeArea.width / 2 - 0.5) * config.layout.width}
+              ${(0.5 - config.layout.stageSafeArea.y - config.layout.stageSafeArea.height / 2) * config.layout.height}
+              ${config.z.effects + 0.001}"
+            width="${config.layout.stageSafeArea.width * config.layout.width}"
+            height="${config.layout.stageSafeArea.height * config.layout.height}"
+            material="shader: flat; wireframe: true; color: #6dffc6; transparent: true; opacity: .78; depthWrite: false"></a-plane>
         </a-entity>
       </a-entity>
     </a-entity>
@@ -187,6 +219,10 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
 export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
   <section class="page3-ui" aria-label="火舞夜空 AR 界面">
     <header class="page3-header"><span>03</span><h1>火舞夜空</h1></header>
+    <section class="page3-placement-guide" role="status" hidden>
+      <strong>请将第三页识别卡平放在桌面</strong>
+      <span>保持手机斜向观察，立体舞台即将展开</span>
+    </section>
     <section class="page3-loading page3-glass-card" role="status" hidden>
       <strong>识别成功｜火舞夜空</strong>
       <span data-page3-loading-text>正在准备火舞舞台</span>
@@ -239,6 +275,15 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
     <p>bgWorldPosition <b data-page3-debug-bg-world>—</b></p>
     <p>floorWorldPosition <b data-page3-debug-floor-world>—</b></p>
     <p>drumWorldPosition <b data-page3-debug-drum-world>—</b></p>
+    <p>page3Root P/R/S <b data-page3-debug-root-transform>—</b></p>
+    <p>floorRoot P/R/S <b data-page3-debug-floor-transform>—</b></p>
+    <p>backboardHinge position <b data-page3-debug-hinge-position>—</b></p>
+    <p>backboardHinge rotation <b data-page3-debug-hinge-rotation>—</b></p>
+    <p>bgBoard localPosition <b data-page3-debug-bg-local>—</b></p>
+    <p>bgBoard worldRotation <b data-page3-debug-bg-rotation>—</b></p>
+    <p>backgroundFloorAngle <b data-page3-debug-angle>—</b></p>
+    <p>stageRoot worldPosition <b data-page3-debug-stage-world>—</b></p>
+    <p>stageRoot worldRotation <b data-page3-debug-stage-rotation>—</b></p>
     <p>targetFound <b data-page3-debug-target-found>false</b></p>
     <p>page3RootVisible <b data-page3-debug-root-visible>false</b></p>
     <p>foundation frames <b data-page3-debug-foundation-frames>0 / ${config.foundation.readyRenderFrames}</b></p>
@@ -296,8 +341,9 @@ export function createPage3Experience({
   const preloaderSession = preloader || createPage3Preloader({ root, config, debug })
   const foundationRoot = root.querySelector('#page3-foundation-root')
   const backgroundRoot = root.querySelector('#page3-background-root')
+  const boardCenter = root.querySelector('#page3-board-center')
   const floorRoot = root.querySelector('#page3-floor-root')
-  const sceneRoot = root.querySelector('#page3-scene-root')
+  const stageRoot = root.querySelector('#page3-stage-root')
   const background = root.querySelector('#page3-background-plane')
   const floor = root.querySelector('#page3-floor-plane')
   const title = root.querySelector('#page3-title-plane')
@@ -324,6 +370,7 @@ export function createPage3Experience({
   const realVideoMessage = root.querySelector('[data-page3-real-message]')
   const completeScreen = root.querySelector('.page3-complete-screen')
   const ui = root.querySelector('.page3-ui')
+  const placementGuide = root.querySelector('.page3-placement-guide')
   const loading = root.querySelector('.page3-loading')
   const loadingText = root.querySelector('[data-page3-loading-text]')
   const stepCard = root.querySelector('.page3-step-card')
@@ -368,6 +415,9 @@ export function createPage3Experience({
   let ironflowerReady = false
   let foundationRenderFrames = 0
   let foundationReady = false
+  let placementGuideShown = false
+  let placementGuideActive = false
+  let backgroundAngleWarningShown = false
   let destroyed = false
   let stateFlags = new Set()
   let pointerStart = null
@@ -591,6 +641,41 @@ export function createPage3Experience({
 
   const isPositiveFiniteScale = (values) =>
     values.every((value) => Number.isFinite(value) && Math.abs(value) > 1e-6)
+  const isFiniteTransform = (transform) =>
+    transform.position.every(Number.isFinite) &&
+    transform.rotation.every(Number.isFinite) &&
+    transform.scale.every(Number.isFinite) &&
+    isPositiveFiniteScale(transform.scale)
+
+  const getWorldRotationDegrees = (entity) => {
+    if (!entity?.object3D) return [NaN, NaN, NaN]
+    const quaternion = new THREE.Quaternion()
+    entity.object3D.updateWorldMatrix(true, false)
+    entity.object3D.getWorldQuaternion(quaternion)
+    const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ')
+    return [euler.x, euler.y, euler.z].map(THREE.MathUtils.radToDeg)
+  }
+
+  const getLocalTransform = (entity) => ({
+    position: entity?.object3D?.position?.toArray?.() || [NaN, NaN, NaN],
+    rotation: entity?.object3D
+      ? [entity.object3D.rotation.x, entity.object3D.rotation.y, entity.object3D.rotation.z].map(THREE.MathUtils.radToDeg)
+      : [NaN, NaN, NaN],
+    scale: entity?.object3D?.scale?.toArray?.() || [NaN, NaN, NaN],
+  })
+
+  const getBackgroundFloorAngle = () => {
+    if (!background?.object3D || !floor?.object3D) return NaN
+    const boardQuaternion = new THREE.Quaternion()
+    const floorQuaternion = new THREE.Quaternion()
+    background.object3D.updateWorldMatrix(true, false)
+    floor.object3D.updateWorldMatrix(true, false)
+    background.object3D.getWorldQuaternion(boardQuaternion)
+    floor.object3D.getWorldQuaternion(floorQuaternion)
+    const boardNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(boardQuaternion).normalize()
+    const floorNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(floorQuaternion).normalize()
+    return THREE.MathUtils.radToDeg(boardNormal.angleTo(floorNormal))
+  }
 
   const getFoundationDiagnostics = () => {
     const bgScale = getWorldVector(backgroundRoot, 'getWorldScale')
@@ -599,6 +684,17 @@ export function createPage3Experience({
     const bgWorldPosition = getWorldVector(background, 'getWorldPosition')
     const floorWorldPosition = getWorldVector(floor, 'getWorldPosition')
     const drumWorldPosition = getWorldVector(drumRoot, 'getWorldPosition')
+    const stageWorldPosition = getWorldVector(stageRoot, 'getWorldPosition')
+    const backgroundFloorAngle = getBackgroundFloorAngle()
+    const rootTransform = getLocalTransform(foundationRoot)
+    const floorRootTransform = getLocalTransform(floorRoot)
+    const floorTransform = getLocalTransform(floor)
+    const hingeTransform = getLocalTransform(backgroundRoot)
+    const backgroundBoardTransform = getLocalTransform(boardCenter)
+    const stageTransform = getLocalTransform(stageRoot)
+    const drumTransform = getLocalTransform(drumRoot)
+    const hingeTargetReached = hingeTransform.rotation.every((value, index) =>
+      Math.abs(value - config.layout.backboardHinge.rotationEndDegrees[index]) <= 0.1)
     return {
       bgTextureReady: isTextureReady('background', background),
       floorTextureReady: isTextureReady('floor', floor),
@@ -608,7 +704,7 @@ export function createPage3Experience({
       drumMounted: isMountedUnderAnchor(drumPlane),
       bgVisible: isActuallyVisible(anchor, foundationRoot, backgroundRoot, background),
       floorVisible: isActuallyVisible(anchor, foundationRoot, floorRoot, floor),
-      drumVisible: isActuallyVisible(anchor, foundationRoot, backgroundRoot, sceneRoot, drumRoot, drumPlane),
+      drumVisible: isActuallyVisible(anchor, foundationRoot, floorRoot, drumRoot, drumPlane),
       bgOpacity: getMaterialOpacity(background),
       floorOpacity: getMaterialOpacity(floor),
       drumOpacity: getMaterialOpacity(drumPlane),
@@ -618,6 +714,19 @@ export function createPage3Experience({
       bgWorldPosition,
       floorWorldPosition,
       drumWorldPosition,
+      rootTransform,
+      floorRootTransform,
+      floorTransform,
+      hingeTransform,
+      backgroundBoardTransform,
+      stageTransform,
+      drumTransform,
+      hingeTargetReached,
+      bgLocalPosition: boardCenter.object3D?.position?.toArray?.() || [NaN, NaN, NaN],
+      bgWorldRotation: getWorldRotationDegrees(background),
+      backgroundFloorAngle,
+      stageWorldPosition,
+      stageWorldRotation: getWorldRotationDegrees(stageRoot),
       currentPage3State: state,
       targetFound: tracked,
       page3RootVisible: isActuallyVisible(anchor, foundationRoot),
@@ -643,6 +752,19 @@ export function createPage3Experience({
     diagnostics.bgWorldPosition.every(Number.isFinite) &&
     diagnostics.floorWorldPosition.every(Number.isFinite) &&
     diagnostics.drumWorldPosition.every(Number.isFinite) &&
+    isFiniteTransform(diagnostics.rootTransform) &&
+    isFiniteTransform(diagnostics.floorRootTransform) &&
+    isFiniteTransform(diagnostics.floorTransform) &&
+    isFiniteTransform(diagnostics.hingeTransform) &&
+    isFiniteTransform(diagnostics.backgroundBoardTransform) &&
+    isFiniteTransform(diagnostics.stageTransform) &&
+    isFiniteTransform(diagnostics.drumTransform) &&
+    diagnostics.hingeTargetReached &&
+    diagnostics.bgWorldRotation.every(Number.isFinite) &&
+    diagnostics.stageWorldPosition.every(Number.isFinite) &&
+    diagnostics.stageWorldRotation.every(Number.isFinite) &&
+    Number.isFinite(diagnostics.backgroundFloorAngle) &&
+    Math.abs(diagnostics.backgroundFloorAngle - 90) <= 2 &&
     diagnostics.targetFound &&
     diagnostics.page3RootVisible
 
@@ -666,6 +788,18 @@ export function createPage3Experience({
       bgWorldPosition: diagnostics.bgWorldPosition.every(Number.isFinite),
       floorWorldPosition: diagnostics.floorWorldPosition.every(Number.isFinite),
       drumWorldPosition: diagnostics.drumWorldPosition.every(Number.isFinite),
+      backgroundFloorAngle: Number.isFinite(diagnostics.backgroundFloorAngle) &&
+        Math.abs(diagnostics.backgroundFloorAngle - 90) <= 2,
+      hingeTargetReached: diagnostics.hingeTargetReached,
+      transformsFinite: [
+        diagnostics.rootTransform,
+        diagnostics.floorRootTransform,
+        diagnostics.floorTransform,
+        diagnostics.hingeTransform,
+        diagnostics.backgroundBoardTransform,
+        diagnostics.stageTransform,
+        diagnostics.drumTransform,
+      ].every(isFiniteTransform),
       page3RootVisible: diagnostics.page3RootVisible,
     }).filter(([, valid]) => !valid)
     problems.forEach(([problem]) => {
@@ -675,44 +809,63 @@ export function createPage3Experience({
     })
   }
 
-  const applyFoundationTransforms = () => {
+  const applyFoundationTransforms = (
+    hingeRotation = config.layout.backboardHinge.rotationStartDegrees,
+  ) => {
     setTransform(foundationRoot, {
-      position: config.foundation.rootPosition,
-      rotation: config.foundation.rootRotation,
-      scale: config.foundation.rootScale,
+      position: config.layout.root.position,
+      rotation: config.layout.root.rotationDegrees,
+      scale: config.layout.root.scale,
     })
-    setTransform(backgroundRoot, {
-      position: [
-        config.foundation.background.hingePosition.x,
-        config.foundation.background.hingePosition.y,
-        config.foundation.background.hingePosition.z,
-      ],
-      rotation: config.foundation.background.rotation,
-      scale: [1, 1, 1],
-    })
-    setTransform(floor, {
-      position: config.foundation.floor.position,
-      rotation: config.foundation.floor.rotation,
-      scale: [1, 1, 1],
-    })
-    setTransform(sceneRoot, {
-      position: config.layout.scenePosition,
-      rotation: config.layout.sceneRotation,
-      scale: [1, 1, 1],
-    })
-    setTransform(drumRoot, {
-      position: [config.layout.drumPivot.x, config.layout.drumPivot.y, config.layout.drumPivot.z],
+    setTransform(floorRoot, {
+      position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
+    })
+    setTransform(backgroundRoot, {
+      position: config.layout.backboardHinge.position,
+      rotation: hingeRotation,
+      scale: config.layout.backboardHinge.scale,
+    })
+    setTransform(boardCenter, {
+      position: config.layout.backgroundBoard.position,
+      rotation: config.layout.backgroundBoard.rotationDegrees,
+      scale: config.layout.backgroundBoard.scale,
+    })
+    setTransform(floor, {
+      position: config.layout.floor.position,
+      rotation: config.layout.floor.rotationDegrees,
+      scale: config.layout.floor.scale,
+    })
+    setTransform(stageRoot, {
+      position: config.layout.stageRoot.position,
+      rotation: config.layout.stageRoot.rotationDegrees,
+      scale: config.layout.stageRoot.scale,
+    })
+    setTransform(drumRoot, {
+      position: config.layout.drumPivot.position,
+      rotation: config.layout.drumPivot.rotationDegrees,
+      scale: config.layout.drumPivot.scale,
+    })
+    ;[
+      [cloudBack, config.layout.cloudBack],
+      [cloudMiddle, config.layout.cloudMiddle],
+      [cloudFront, config.layout.cloudFront],
+    ].forEach(([entity, cloudLayout]) => {
+      setTransform(entity, {
+        position: cloudLayout.position,
+        rotation: [0, 0, 0],
+        scale: cloudLayout.scale,
+      })
     })
   }
 
   const showFoundation = () => {
-    applyFoundationTransforms()
+    applyFoundationTransforms(config.layout.backboardHinge.rotationEndDegrees)
     setVisible(foundationRoot, true)
     setVisible(backgroundRoot, true)
     setVisible(floorRoot, true)
-    setVisible(sceneRoot, true)
+    setVisible(stageRoot, true)
     setVisible(background, true)
     setVisible(floor, true)
     setVisible(title, true)
@@ -728,20 +881,65 @@ export function createPage3Experience({
     setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
     setOpacity(cloudFront, config.clouds.front.opacityMin)
     setOpacity(drumPlane, 1)
-    applyRenderOrder(background, config.foundation.background.renderOrder)
-    applyRenderOrder(floor, config.foundation.floor.renderOrder)
+    applyRenderOrder(background, config.layout.backgroundBoard.renderOrder)
+    applyRenderOrder(floor, config.layout.floor.renderOrder)
     applyRenderOrder(drumPlane, config.renderOrder.drum)
   }
 
+  const prepareFoundationEntrance = () => {
+    const holdMs = config.durations.placementGuideHoldMs
+    const openMs = config.durations.foundationOpenMs
+    const rawOpenProgress = clamp((stateElapsed - holdMs) / openMs)
+    const openProgress = easeInOutCubic(rawOpenProgress)
+    const startRotation = config.layout.backboardHinge.rotationStartDegrees
+    const endRotation = config.layout.backboardHinge.rotationEndDegrees
+    const hingeRotation = startRotation.map((value, index) => lerp(value, endRotation[index], openProgress))
+    applyFoundationTransforms(hingeRotation)
+    setVisible(foundationRoot, true)
+    setVisible(backgroundRoot, true)
+    setVisible(floorRoot, true)
+    setVisible(stageRoot, true)
+    setVisible(background, true)
+    setVisible(floor, true)
+    setVisible(title, true)
+    const floorProgress = easeOutCubic((stateElapsed - Math.max(0, holdMs - 250)) / Math.max(1, openMs * 0.55))
+    setOpacity(floor, lerp(0.16, 1, floorProgress))
+    setOpacity(background, lerp(0.18, 1, openProgress))
+    setOpacity(title, lerp(0.12, 1, openProgress))
+    const finalContentVisible = rawOpenProgress >= 1
+    ;[cloudBack, cloudMiddle, cloudFront, drumRoot, drumPlane].forEach((entity) => {
+      setVisible(entity, finalContentVisible)
+    })
+    if (finalContentVisible) {
+      setOpacity(cloudBack, config.clouds.back.opacityMin)
+      setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
+      setOpacity(cloudFront, config.clouds.front.opacityMin)
+      setOpacity(drumPlane, 1)
+    }
+    placementGuideActive = stateElapsed < holdMs
+    placementGuide.hidden = !placementGuideActive
+    loading.hidden = placementGuideActive
+    return rawOpenProgress
+  }
+
   const updateFoundationGate = () => {
-    showFoundation()
+    const openProgress = prepareFoundationEntrance()
     const diagnostics = getFoundationDiagnostics()
-    if (foundationIsRenderable(diagnostics)) {
+    if (
+      openProgress >= 1 &&
+      Number.isFinite(diagnostics.backgroundFloorAngle) &&
+      (diagnostics.backgroundFloorAngle < 80 || diagnostics.backgroundFloorAngle > 100) &&
+      !backgroundAngleWarningShown
+    ) {
+      backgroundAngleWarningShown = true
+      console.warn('[Page3] Background board is not perpendicular to floor.', diagnostics)
+    }
+    if (openProgress >= 1 && foundationIsRenderable(diagnostics)) {
       foundationRenderFrames += 1
       foundationWarnings.clear()
     } else {
       foundationRenderFrames = 0
-      if (stateElapsed >= 750) warnFoundationProblems(diagnostics)
+      if (openProgress >= 1) warnFoundationProblems(diagnostics)
     }
     foundationReady = foundationRenderFrames >= config.foundation.readyRenderFrames
     renderDebug(diagnostics)
@@ -753,11 +951,12 @@ export function createPage3Experience({
   const resetVisuals = () => {
     foundationRenderFrames = 0
     foundationReady = false
-    applyFoundationTransforms()
+    backgroundAngleWarningShown = false
+    applyFoundationTransforms(config.layout.backboardHinge.rotationStartDegrees)
     setVisible(foundationRoot, true)
     setVisible(backgroundRoot, false)
     setVisible(floorRoot, false)
-    setVisible(sceneRoot, true)
+    setVisible(stageRoot, false)
     setVisible(background, true)
     setVisible(floor, true)
     setVisible(title, true)
@@ -786,12 +985,11 @@ export function createPage3Experience({
     setOpacity(cloudMiddle, 0)
     setOpacity(cloudFront, 0)
     setOpacity(drumPlane, 0)
-    drumRoot.object3D.position.set(
-      config.layout.drumPivot.x,
-      config.layout.drumPivot.y,
-      config.layout.drumPivot.z,
-    )
-    drumRoot.object3D.scale.setScalar(1)
+    setTransform(drumRoot, {
+      position: config.layout.drumPivot.position,
+      rotation: config.layout.drumPivot.rotationDegrees,
+      scale: config.layout.drumPivot.scale,
+    })
     pearlRoot.object3D.position.copy(basePearlPosition)
     pearlRoot.object3D.scale.setScalar(1)
     dragonPlane.object3D.position.copy(baseDragonPosition)
@@ -864,6 +1062,8 @@ export function createPage3Experience({
     const diagnostics = currentDiagnostics || getFoundationDiagnostics()
     const formatNumber = (value) => Number.isFinite(value) ? value.toFixed(3) : 'NaN'
     const formatVector = (values) => values.map(formatNumber).join(', ')
+    const formatTransform = (transform) =>
+      `P(${formatVector(transform.position)}) R(${formatVector(transform.rotation)}) S(${formatVector(transform.scale)})`
     root.querySelector('[data-page3-debug-state]').textContent = state
     root.querySelector('[data-page3-debug-tracked]').textContent = String(tracked)
     root.querySelector('[data-page3-debug-critical]').textContent = String(criticalReady)
@@ -883,6 +1083,21 @@ export function createPage3Experience({
     root.querySelector('[data-page3-debug-bg-world]').textContent = formatVector(diagnostics.bgWorldPosition)
     root.querySelector('[data-page3-debug-floor-world]').textContent = formatVector(diagnostics.floorWorldPosition)
     root.querySelector('[data-page3-debug-drum-world]').textContent = formatVector(diagnostics.drumWorldPosition)
+    root.querySelector('[data-page3-debug-root-transform]').textContent = formatTransform(diagnostics.rootTransform)
+    root.querySelector('[data-page3-debug-floor-transform]').textContent = formatTransform(diagnostics.floorRootTransform)
+    root.querySelector('[data-page3-debug-hinge-position]').textContent =
+      formatVector(diagnostics.hingeTransform.position)
+    root.querySelector('[data-page3-debug-hinge-rotation]').textContent =
+      formatVector(diagnostics.hingeTransform.rotation)
+    root.querySelector('[data-page3-debug-bg-local]').textContent = formatVector(diagnostics.bgLocalPosition)
+    root.querySelector('[data-page3-debug-bg-rotation]').textContent =
+      formatVector(diagnostics.bgWorldRotation)
+    root.querySelector('[data-page3-debug-angle]').textContent =
+      `${formatNumber(diagnostics.backgroundFloorAngle)}°`
+    root.querySelector('[data-page3-debug-stage-world]').textContent =
+      formatVector(diagnostics.stageWorldPosition)
+    root.querySelector('[data-page3-debug-stage-rotation]').textContent =
+      formatVector(diagnostics.stageWorldRotation)
     root.querySelector('[data-page3-debug-target-found]').textContent = String(diagnostics.targetFound)
     root.querySelector('[data-page3-debug-root-visible]').textContent = String(diagnostics.page3RootVisible)
     root.querySelector('[data-page3-debug-foundation-frames]').textContent =
@@ -897,11 +1112,12 @@ export function createPage3Experience({
     stateFlags = new Set()
     drumEnabled = false
     updateStepUi()
-    loading.hidden = state !== PAGE3_STATES.LOADING
+    loading.hidden = state !== PAGE3_STATES.LOADING || placementGuideActive
     stepCard.hidden = [PAGE3_STATES.HIDDEN, PAGE3_STATES.LOADING, PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)
     progress.hidden = stepCard.hidden
     endOptions.hidden = state !== PAGE3_STATES.END_OPTIONS
     prompt.hidden = true
+    if (state !== PAGE3_STATES.LOADING) placementGuide.hidden = true
 
     if (state === PAGE3_STATES.HIDDEN) {
       ui.hidden = true
@@ -915,10 +1131,12 @@ export function createPage3Experience({
     if (state === PAGE3_STATES.LOADING) {
       loadingText.textContent = '正在唤醒火龙舞台……'
       resetVisuals()
+      placementGuide.hidden = !placementGuideActive
     } else if (state === PAGE3_STATES.READY) {
       stopStageMedia()
       resetVisuals()
       showFoundation()
+      placementGuide.hidden = true
       foundationRenderFrames = config.foundation.readyRenderFrames
       foundationReady = true
       preloaderSession.loadDeferred().catch(() => {})
@@ -994,9 +1212,16 @@ export function createPage3Experience({
 
   const playDrumFeedback = () => {
     drumFeedbackElapsed = 0
+    const drumWorldPosition = new THREE.Vector3()
+    drumRoot.object3D.getWorldPosition(drumWorldPosition)
+    const drumStagePosition = stageRoot.object3D.worldToLocal(drumWorldPosition.clone())
     for (let index = 0; index < config.drum.rippleCount; index += 1) {
       effects.addRipple(
-        { ...config.layout.drumPivot, z: config.z.effects },
+        {
+          x: drumStagePosition.x,
+          y: drumStagePosition.y,
+          z: drumStagePosition.z + 0.01,
+        },
         index * config.drum.rippleDelayMs,
       )
     }
@@ -1154,8 +1379,13 @@ export function createPage3Experience({
     })
     if (state === PAGE3_STATES.HIDDEN) {
       stableElapsed = 0
-      loading.hidden = false
-      loadingText.textContent = '识别成功，正在稳定火舞舞台'
+      if (!placementGuideShown) {
+        placementGuideShown = true
+        placementGuideActive = true
+        placementGuide.hidden = false
+      }
+      loading.hidden = placementGuideActive
+      loadingText.textContent = '正在唤醒火龙舞台……'
     } else {
       setVisible(anchor, true)
       resumeAfterTracking()
@@ -1192,9 +1422,15 @@ export function createPage3Experience({
 
   const updateCloud = (entity, cloudConfig, elapsed, opacityScale = 1) => {
     if (!entity.object3D.visible) return
+    const layoutConfig = entity === cloudBack
+      ? config.layout.cloudBack
+      : entity === cloudMiddle
+        ? config.layout.cloudMiddle
+        : config.layout.cloudFront
     const angle = (elapsed / cloudConfig.periodMs) * Math.PI * 2 + cloudConfig.phase
-    entity.object3D.position.x = Math.sin(angle) * cloudConfig.amplitudeX
-    entity.object3D.position.y = Math.sin(angle * 0.82) * cloudConfig.amplitudeY
+    entity.object3D.position.x = layoutConfig.position[0] + Math.sin(angle) * cloudConfig.amplitudeX
+    entity.object3D.position.y = layoutConfig.position[1] + Math.sin(angle * 0.82) * cloudConfig.amplitudeY
+    entity.object3D.position.z = layoutConfig.position[2]
     const opacity = lerp(cloudConfig.opacityMin, cloudConfig.opacityMax, (Math.sin(angle + 0.7) + 1) / 2)
     setOpacity(entity, opacity * opacityScale)
   }
@@ -1351,7 +1587,7 @@ export function createPage3Experience({
     updateDrumAnimation(delta)
 
     if (state === PAGE3_STATES.LOADING) {
-      if (criticalReady && updateFoundationGate()) setPage3State(PAGE3_STATES.READY)
+      if (updateFoundationGate() && criticalReady) setPage3State(PAGE3_STATES.READY)
       return
     }
     if (state === PAGE3_STATES.READY) {
@@ -1416,14 +1652,19 @@ export function createPage3Experience({
 
   if (debug) {
     const placeDebugAnchor = () => {
-      anchor.object3D.position.set(0, -1.05, -3.05)
-      anchor.object3D.quaternion.identity()
-      anchor.object3D.scale.setScalar(1.55)
+      anchor.object3D.position.set(0, -0.72, -3.05)
+      anchor.object3D.rotation.set(THREE.MathUtils.degToRad(-45), 0, 0)
+      anchor.object3D.scale.setScalar(1.4)
       setVisible(anchor, true)
     }
     const simulate = () => {
       tracked = true
       suspended = false
+      if (!placementGuideShown) {
+        placementGuideShown = true
+        placementGuideActive = true
+        placementGuide.hidden = false
+      }
       root.querySelector('.page1-ar')?.classList.remove('is-page2-active')
       root.querySelector('.page1-ar')?.classList.add('is-page3-active')
       ui.hidden = false
