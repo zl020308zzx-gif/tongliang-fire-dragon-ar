@@ -5,6 +5,9 @@ const page3Asset = (path) => assetUrl(`assets/page3/${path}`)
 const markerAspect = 1491 / 1055
 const canvasWidth = 1.02
 const canvasHeight = canvasWidth * 1.5
+const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+const isIOSWebKit = /iPad|iPhone|iPod/.test(userAgent)
+  || (/\bMacintosh\b/.test(userAgent) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1)
 
 export const PAGE3_STATES = Object.freeze({
   HIDDEN: 'PAGE3_HIDDEN',
@@ -40,8 +43,16 @@ export const PAGE3_CONFIG = {
     stageLights: page3Asset('stage/page3-stage-lights.png'),
     drum: page3Asset('props/page3-drum-main.png'),
     pearl: page3Asset('props/page3-dragon-pearl.png'),
-    dragonVideo: page3Asset('performance/page3-perf-dragon.webm'),
-    ironflowerVideo: page3Asset('performance/page3-perf-ironflower.webm'),
+    dragonWebm: page3Asset('performance/page3-perf-dragon.webm'),
+    ironflowerWebm: page3Asset('performance/page3-perf-ironflower.webm'),
+    dragonGreenMp4: page3Asset('performance/page3-perf-dragon-green.mp4'),
+    ironflowerGreenMp4: page3Asset('performance/page3-perf-ironflower-green.mp4'),
+    dragonVideo: page3Asset(isIOSWebKit
+      ? 'performance/page3-perf-dragon-green.mp4'
+      : 'performance/page3-perf-dragon.webm'),
+    ironflowerVideo: page3Asset(isIOSWebKit
+      ? 'performance/page3-perf-ironflower-green.mp4'
+      : 'performance/page3-perf-ironflower.webm'),
     dragonBgm: page3Asset('audio/page3-bgm-dragon-dance.mp3'),
     climaxBgm: page3Asset('audio/page3-bgm-ambience.mp3'),
     drumSfx: page3Asset('audio/page3-sfx-drum-hit.mp3'),
@@ -230,6 +241,17 @@ export const PAGE3_CONFIG = {
     maxPixelRatio: 1.75,
     lowPowerConcurrency: 3,
     normalConcurrency: 4,
+  },
+  platform: {
+    isIOSWebKit,
+    performanceVideoSource: isIOSWebKit ? 'green-mp4' : 'transparent-webm',
+    performanceMaterialType: isIOSWebKit ? 'chroma-key-shader' : 'aframe-video-material',
+  },
+  chromaKey: {
+    color: [0.08, 0.78, 0.12],
+    similarity: 0.32,
+    smoothness: 0.12,
+    spill: 0.18,
   },
 }
 

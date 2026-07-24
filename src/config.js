@@ -15,14 +15,13 @@ export const PAGE1_PREVIEW_CONFIG = {
   assets: {
     backgroundBoard: `${PAGE1_DIRECTORY}/craft-panel.png`,
     floorBase: `${PAGE1_DIRECTORY}/craft-panel-base.png`,
+    titleImage: `${PAGE1_DIRECTORY}/page-title-fire.png`,
     bambooBundle: `${PAGE1_DIRECTORY}/bamboo-bundle.png`,
     bambooBuildAudio: assetUrl('assets/page1/audio/bamboo-build.mp3'),
     paperCoverAudio: assetUrl('assets/page1/audio/paper-cover.mp3'),
-    paintBrushAudio: assetUrl('assets/page1/audio/paint-brush.mp3'),
     completeAudio: assetUrl('assets/page1/audio/complete.mp3'),
     colorMask: `${PAGE1_DIRECTORY}/color-mask.png`,
     badge: `${PAGE1_DIRECTORY}/badge-bamboo.png`,
-    awakenVideo: assetUrl('assets/page1/video/dragon-awaken.mp4'),
     craftLayers: [
       { id: 'lineart', label: '线稿', path: `${PAGE1_DIRECTORY}/01-lineart.png` },
       { id: 'bamboo', label: '竹骨', path: `${PAGE1_DIRECTORY}/02-bamboo-frame.png` },
@@ -43,7 +42,6 @@ export const PAGE1_PREVIEW_CONFIG = {
     paperValue: 'paper',
     paintValue: 'paint',
     eyeValue: 'eye',
-    videoValue: 'video',
     explodeValue: 'explode',
     hintsValue: 'hints',
     stateValue: 'state',
@@ -67,11 +65,6 @@ export const PAGE1_PREVIEW_CONFIG = {
       width: CRAFT_WIDTH,
       height: CRAFT_HEIGHT,
       position: [0, -0.22, 0],
-    },
-    video: {
-      width: 1.884375,
-      height: 3.35,
-      position: [0, -0.22, 0.03],
     },
   },
   copy: {
@@ -101,7 +94,7 @@ export const PAGE1_PREVIEW_CONFIG = {
         title: '点睛唤醒',
         description: '点睛赋予龙头完整神采，也象征火龙由工艺器物走向舞动生命。',
       },
-      video: {
+      awaken: {
         number: '唤醒仪式',
         title: '火龙苏醒',
         description: '点睛后的龙首在火光中苏醒，制作完成的龙具由静态工艺进入表演状态。',
@@ -241,16 +234,16 @@ export const PAGE1_PREVIEW_CONFIG = {
     size: { width: PANEL_WIDTH, height: PANEL_HEIGHT },
     rotation: [0, 0, 0],
   },
+  titleImage: {
+    position: [0, 0, -0.072],
+    size: { width: PANEL_HEIGHT * (2 / 3), height: PANEL_HEIGHT },
+    rotation: [0, 0, 0],
+    fadeDurationMs: 420,
+  },
   craftPlane: {
     position: [0, -0.22, 0],
     // 平面宽高比与 1041 × 1024 Canvas 完全一致。
     size: { width: CRAFT_WIDTH, height: CRAFT_HEIGHT },
-    rotation: [0, 0, 0],
-  },
-  videoPlane: {
-    position: [0, -0.22, 0.03],
-    // 原视频 720 × 1280，按 9:16 保持原始比例。
-    size: { width: 1.884375, height: 3.35 },
     rotation: [0, 0, 0],
   },
   badge: {
@@ -269,11 +262,13 @@ export const PAGE1_PREVIEW_CONFIG = {
     minimumFrontGap: 0.02,
     focusDepth: 0.16,
     unfocusedOpacity: 0.42,
+    // AR 根节点会进一步缩放；0.55 个局部单位约等于 0.124 个世界单位。
+    layerGap: 0.55,
     layers: [
-      { id: 'lineart', stage: '01', shortLabel: '起稿', x: -0.36, y: 0, z: 0.12, renderOrder: 10 },
-      { id: 'bamboo', stage: '02', shortLabel: '竹骨', x: -0.12, y: 0, z: 0.32, renderOrder: 11 },
-      { id: 'paper', stage: '03', shortLabel: '裱糊', x: 0.12, y: 0, z: 0.52, renderOrder: 12 },
-      { id: 'color', stage: '04', shortLabel: '彩绘成品', x: 0.36, y: 0, z: 0.72, renderOrder: 13 },
+      { id: 'lineart', stage: '01', shortLabel: '起稿', x: -0.36, y: 0, z: 0.08, renderOrder: 10 },
+      { id: 'bamboo', stage: '02', shortLabel: '竹骨', x: -0.12, y: 0, z: 0.63, renderOrder: 11 },
+      { id: 'paper', stage: '03', shortLabel: '裱糊', x: 0.12, y: 0, z: 1.18, renderOrder: 12 },
+      { id: 'color', stage: '04', shortLabel: '彩绘成品', x: 0.36, y: 0, z: 1.73, renderOrder: 13 },
     ],
     parallax: {
       maxHorizontalDeg: 8,
@@ -320,12 +315,6 @@ export const PAGE1_PREVIEW_CONFIG = {
       xMax: 0.4,
       yMin: 0.64,
       yMax: 0.94,
-    },
-    bambooDropTarget: {
-      xMin: 0.43,
-      xMax: 0.78,
-      yMin: 0.34,
-      yMax: 0.62,
     },
     bambooDrag: {
       clickThresholdPx: 12,
@@ -382,8 +371,5 @@ export const PAGE1_PREVIEW_CONFIG = {
     position: [0, 0, 8.4],
     rotation: [0, 0, 0],
     fov: 48,
-  },
-  video: {
-    maxDurationMs: 5000,
   },
 }

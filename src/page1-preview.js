@@ -39,10 +39,9 @@ const debugPanel = (mode, config) => {
   if (mode === 'paper') return `<aside class="debug-panel"><p>滑杆比例 <strong data-debug-paper-progress>0%</strong></p><p>完成阈值 <strong>${Math.round(config.paperCompare.completeThreshold * 100)}%</strong></p><p>当前 UV <strong data-debug-uv>—</strong></p><p>hasSeenFullPaper <strong data-debug-paper-seen>false</strong></p><p>正在拖动 <strong data-debug-paper-dragging>否</strong></p><p>分割线 <strong data-debug-paper-boundary>0 px</strong></p><p>柔边范围 <strong>${config.paperCompare.featherWidth} px</strong></p></aside><div class="paper-boundary-debug" hidden></div><div class="hit-area-debug" hidden></div>`
   if (mode === 'paint') return `<aside class="debug-panel paint-debug-panel"><p>指针位置 <strong data-debug-brush-position>—</strong></p><p>gestureActive <strong data-debug-paint-active>否</strong></p><p>pointerCaptured <strong data-debug-paint-captured>否</strong></p><p>insideCanvas <strong data-debug-paint-inside>否</strong></p><p>insideColorMask <strong data-debug-paint-mask>否</strong></p><p>suspendedOutsideCanvas <strong data-debug-paint-suspended>否</strong></p><p>lastValidPaintPoint <strong data-debug-paint-last>—</strong></p><p>画笔半径 <strong>${config.paintBrush.radius} px</strong></p><p>核心比例 <strong>${config.paintBrush.coreRatio}</strong></p><p>覆盖率 <strong data-debug-paint-progress>0%</strong></p><div class="paint-debug-canvases"><figure><canvas class="debug-valid-mask" width="${config.paintInteraction.statistics.size}" height="${config.paintInteraction.statistics.size}"></canvas><figcaption>有效区域</figcaption></figure><figure><canvas class="debug-painted-mask" width="${config.paintInteraction.statistics.size}" height="${config.paintInteraction.statistics.size}"></canvas><figcaption>coverageMask</figcaption></figure></div></aside><div class="hit-area-debug" hidden></div>`
   if (mode === 'eye') return `<aside class="debug-panel"><p>当前 UV <strong data-debug-eye-uv>—</strong></p><p>是否命中 <strong data-debug-eye-hit>—</strong></p></aside><div class="eye-hotspot-debug" hidden><i></i></div>`
-  if (mode === 'video') return `<aside class="debug-panel"><p>视频状态 <strong data-debug-video-mode>idle</strong></p><p>静态平面 <strong data-debug-video-craft>显示</strong></p><p>视频平面 <strong data-debug-video-plane>隐藏</strong></p></aside>`
   if (mode === 'explode') return `<aside class="debug-panel explode-debug-panel"><p>爆炸状态 <strong data-debug-explode-state>EXPLODE_VIEW</strong></p><p>选中层 <strong data-debug-explode-selected>—</strong></p><p>展开进度 <strong data-debug-explode-progress>0%</strong></p><p>panelSurfaceZ <strong data-debug-explode-panel>${config.explodedView.panelSurfaceZ}</strong></p><p>frontDirectionSign <strong data-debug-explode-sign>${config.explodedView.frontDirectionSign}</strong></p><p>视差旋转 <strong data-debug-parallax>0, 0</strong></p><p>输入坐标 <strong data-debug-parallax-input>0, 0</strong></p><p data-debug-explode-warning>等待图层状态</p><pre data-debug-explode-layers></pre><p>可点击范围（屏幕 px）</p><pre data-debug-explode-click-bounds></pre><p>多层局部标注 <strong>见画面</strong></p></aside>`
   if (mode === 'hints') return `<aside class="debug-panel hints-debug-panel"><p>提示配置 <strong>全部显示</strong></p><pre>${JSON.stringify(config.interactionHints, null, 2)}</pre></aside><div class="hit-area-debug" hidden></div>`
-  if (mode === 'state') return `<aside class="debug-panel state-debug-panel"><p>当前状态 <strong data-debug-current-state>LINEART</strong></p><p>上一个状态 <strong data-debug-previous-state>—</strong></p><p>bambooProgress <strong data-debug-state-bamboo>0%</strong></p><p>paperProgress <strong data-debug-state-paper>0%</strong></p><p>paintProgress <strong data-debug-state-paint>0%</strong></p><p>视频状态 <strong data-debug-video>idle</strong></p><p>完成状态 <strong data-debug-completed>false</strong></p></aside>`
+  if (mode === 'state') return `<aside class="debug-panel state-debug-panel"><p>当前状态 <strong data-debug-current-state>LINEART</strong></p><p>上一个状态 <strong data-debug-previous-state>—</strong></p><p>bambooProgress <strong data-debug-state-bamboo>0%</strong></p><p>paperProgress <strong data-debug-state-paper>0%</strong></p><p>paintProgress <strong data-debug-state-paint>0%</strong></p><p>完成状态 <strong data-debug-completed>false</strong></p></aside>`
   return ''
 }
 
@@ -52,7 +51,7 @@ export function renderPage1Preview(root) {
   const params = new URLSearchParams(window.location.search)
   const debugValue = params.get(config.debug.queryKey)
   const isLayerDebug = debugValue === config.debug.layersValue
-  const debugModes = ['bamboo', 'paper', 'paint', 'eye', 'video', 'explode', 'hints', 'state']
+  const debugModes = ['bamboo', 'paper', 'paint', 'eye', 'explode', 'hints', 'state']
   const debugMode = debugModes.includes(debugValue) ? debugValue : null
 
   root.innerHTML = `
@@ -64,7 +63,6 @@ export function renderPage1Preview(root) {
           <img id="craft-panel" src="${config.assets.backgroundBoard}" alt="" draggable="false" />
           <img id="badge-bamboo" src="${config.assets.badge}" alt="" draggable="false" />
           ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
-          <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="metadata"></video>
           <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
         </a-assets>
 
@@ -73,9 +71,6 @@ export function renderPage1Preview(root) {
           width="${config.craftPlane.size.width}" height="${config.craftPlane.size.height}"
           material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; depthWrite: false; depthTest: true; side: double; shader: flat"
           animation__fade="property: material.opacity; from: 0; to: 1; dur: 600; easing: easeOutQuad"></a-plane>
-        <a-video id="dragon-video-plane" src="#dragon-video" position="${vector(config.videoPlane.position)}"
-          rotation="${vector(config.videoPlane.rotation)}" width="${config.videoPlane.size.width}"
-          height="${config.videoPlane.size.height}" material="shader: flat" visible="false"></a-video>
         ${imageEntity('badge-bamboo', config.badge, `id="bamboo-badge" scale="0.6 0.6 0.6" material="transparent: true; opacity: 0; shader: flat" visible="false" animation__scale="property: scale; from: 0.6 0.6 0.6; to: 1 1 1; dur: ${config.badge.animationDurationMs}; startEvents: showbadge" animation__opacity="property: material.opacity; from: 0; to: 1; dur: ${config.badge.animationDurationMs}; startEvents: showbadge"`)}
         ${explodedGroup(config.explodedView)}
 
@@ -114,10 +109,7 @@ export function renderPage1Preview(root) {
         <p class="step-description">${config.copy.steps.lineart.description}</p>
         <p class="step-hint"><span>操作提示</span>起稿完成后进入扎骨体验。</p>
         <div class="card-actions">
-          <button type="button" data-card-action="retry" hidden>重新播放</button>
-          <button type="button" data-card-action="skip" hidden>跳过视频</button>
           <button type="button" data-card-action="review" hidden>查看工艺总览</button>
-          <button type="button" data-card-action="overview" hidden>返回全貌</button>
           <button type="button" data-card-action="restart" hidden>重新体验</button>
           <button type="button" data-card-action="end" hidden>结束预览</button>
         </div>

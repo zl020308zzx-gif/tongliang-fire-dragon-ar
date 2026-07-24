@@ -6,7 +6,6 @@ import { createInteractionHints } from './interaction-hints.js'
 import { createParallaxController } from './parallax-controller.js'
 import { createProgressManager } from './progress-manager.js'
 import { createUiController } from './ui-controller.js'
-import { createVideoController } from './video-controller.js'
 
 export const PAGE1_STATES = Object.freeze({
   LINEART: 'LINEART',
@@ -18,7 +17,6 @@ export const PAGE1_STATES = Object.freeze({
   COLOR_PAINT: 'COLOR_PAINT',
   COLOR_COMPLETE: 'COLOR_COMPLETE',
   EYE_READY: 'EYE_READY',
-  VIDEO_PLAYING: 'VIDEO_PLAYING',
   AWAKEN_REVIEW: 'AWAKEN_REVIEW',
   EXPLODE_TRANSITION: 'EXPLODE_TRANSITION',
   EXPLODE_VIEW: 'EXPLODE_VIEW',
@@ -37,6 +35,7 @@ export function initializePage1Controller({
   canShowBambooHint = null,
   onHintVisibilityChange = null,
   onStateChange = null,
+  onStageEnter = null,
 }) {
   const abortController = new AbortController()
   const { signal } = abortController
@@ -45,8 +44,6 @@ export function initializePage1Controller({
   const craftPanel = root.querySelector('#craft-panel-surface')
   const canvas = root.querySelector(`#${config.canvas.id}`)
   const craftPlane = root.querySelector('#craft-plane')
-  const video = root.querySelector('#dragon-video')
-  const videoPlane = root.querySelector('#dragon-video-plane')
   const badge = root.querySelector('#bamboo-badge')
   const explodedGroup = root.querySelector('#explodedCraftGroup')
   const explodeOutline = root.querySelector('#explode-focus-outline')
@@ -70,7 +67,6 @@ export function initializePage1Controller({
   let interaction = null
   let exploded = null
   let parallax = null
-  let videoController = null
   let resizeObserver = null
   let interactionLocked = false
   let pointerActivity = { isActive: false, mode: null }
@@ -80,7 +76,6 @@ export function initializePage1Controller({
   let selectedLayer = null
   let explodeProgress = 0
   let parallaxState = { rotation: { x: 0, y: 0 }, normalized: { x: 0, y: 0 } }
-  let videoStatus = 'idle'
   let paintStatisticsTimer = null
   let lastPaintStatisticsTime = 0
   let experienceGeneration = 0
@@ -110,7 +105,6 @@ export function initializePage1Controller({
     paths: {
       bamboo: config.assets.bambooBuildAudio,
       paper: config.assets.paperCoverAudio,
-      paint: config.assets.paintBrushAudio,
       complete: config.assets.completeAudio,
     },
     errorOutput,
@@ -192,10 +186,7 @@ export function initializePage1Controller({
   }
 
   const actions = {
-    retry: () => state === PAGE1_STATES.VIDEO_PLAYING && videoController?.retry(),
-    skip: () => state === PAGE1_STATES.VIDEO_PLAYING && videoController?.skip(),
     review: () => startExplodedView(),
-    overview: () => restoreExplodedOverview(),
     restart: () => resetExperience(),
     end: () => {
       transition(PAGE1_STATES.COMPLETED)
@@ -247,11 +238,6 @@ export function initializePage1Controller({
       root.querySelector('[data-debug-paint-last]').textContent = lastPoint ? `${Math.round(lastPoint.x)}, ${Math.round(lastPoint.y)}` : '—'
       root.querySelector('[data-debug-paint-progress]').textContent = `${Math.round(values.paint * 100)}%`
     }
-    if (debugMode === 'video') {
-      root.querySelector('[data-debug-video-mode]').textContent = videoStatus
-      root.querySelector('[data-debug-video-craft]').textContent = craftPlane.getAttribute('visible') === false ? '隐藏' : '显示'
-      root.querySelector('[data-debug-video-plane]').textContent = videoPlane.getAttribute('visible') === true ? '显示' : '隐藏'
-    }
     if (debugMode === 'explode' && exploded) {
       root.querySelector('[data-debug-explode-state]').textContent = state
       root.querySelector('[data-debug-explode-selected]').textContent = selectedLayer ?? '—'
@@ -292,7 +278,6 @@ export function initializePage1Controller({
       root.querySelector('[data-debug-state-bamboo]').textContent = `${Math.round(values.bamboo * 100)}%`
       root.querySelector('[data-debug-state-paper]').textContent = `${Math.round(values.paper * 100)}%`
       root.querySelector('[data-debug-state-paint]').textContent = `${Math.round(values.paint * 100)}%`
-      root.querySelector('[data-debug-video]').textContent = videoStatus
       root.querySelector('[data-debug-completed]').textContent = String(progress.isCompleted())
     }
   }
@@ -366,6 +351,7 @@ export function initializePage1Controller({
       state = nextState
     }
     onStateChange?.(state, previousState)
+    onStageEnter?.(state, previousState)
     ui.setState(state, progress.getAll(), meta(extra))
     hints.showForState(state, PAGE1_STATES, { showAll: debugMode === 'hints' })
     syncCanvasHints()
@@ -539,7 +525,6 @@ export function initializePage1Controller({
         progress.set('paint', 1)
         renderer.drawLayer('color')
         transition(PAGE1_STATES.COLOR_COMPLETE)
-        audio.play('paint')
         hints.burst('paint', config.effects.paintParticleCount, config.effects.particleDurationMs)
         schedule(() => {
           interactionLocked = false
@@ -622,7 +607,6 @@ export function initializePage1Controller({
     clearScheduledWork()
     interaction?.reset()
     audio.reset()
-    videoController?.stop()
     renderer.resetPaint()
     exploded?.reset()
     parallax?.reset()
@@ -736,9 +720,8 @@ export function initializePage1Controller({
         }
         if (!info.hit || state !== PAGE1_STATES.EYE_READY || interactionLocked) return
         interactionLocked = true
-        transition(PAGE1_STATES.VIDEO_PLAYING)
         audio.stopAll()
-        videoController.play()
+        enterAwakenReview()
       },
     })
 
@@ -792,7 +775,7 @@ export function initializePage1Controller({
 
     if (debugMode === 'paper') startPaperCompare({ demonstrate: false })
     else if (debugMode === 'paint') startPaint()
-    else if (debugMode === 'eye' || debugMode === 'video') {
+    else if (debugMode === 'eye') {
       renderer.drawLayer('color')
       transition(PAGE1_STATES.EYE_READY)
     } else if (debugMode === 'explode') {
@@ -801,22 +784,6 @@ export function initializePage1Controller({
       startExplodedView()
     } else transition(PAGE1_STATES.LINEART)
   }
-
-  videoController = createVideoController({
-    video,
-    videoPlane,
-    craftPlane,
-    path: config.assets.awakenVideo,
-    maxDurationMs: config.video.maxDurationMs,
-    signal,
-    errorOutput,
-    onEnded: enterAwakenReview,
-    onFailed: () => ui.showVideoFailure(),
-    onStatusChange(status) {
-      videoStatus = status
-      updateDebug()
-    },
-  })
 
   if (debugLayers) {
     root.querySelectorAll('[data-layer]').forEach((button) =>
@@ -842,9 +809,6 @@ export function initializePage1Controller({
     progress: progress.getAll(),
     paperSliderPosition: progress.get('paper'),
     hasSeenFullPaper,
-    videoStatus,
-    videoCurrentTime: videoController?.getCurrentTime?.() ?? 0,
-    videoPausedByTracking: videoController?.wasPausedByTracking?.() ?? false,
     explodeViewState: explodeProgress,
     selectedLayer,
     canvasPreserved: canvas.width > 0 && canvas.height > 0,
@@ -868,7 +832,6 @@ export function initializePage1Controller({
         } else if (
           [
             PAGE1_STATES.EYE_READY,
-            PAGE1_STATES.VIDEO_PLAYING,
             PAGE1_STATES.AWAKEN_REVIEW,
             PAGE1_STATES.EXPLODE_TRANSITION,
             PAGE1_STATES.EXPLODE_VIEW,
@@ -899,7 +862,6 @@ export function initializePage1Controller({
         hints.hideBamboo('targetLost或追踪暂停')
         syncCanvasHints({ hintAllowed: false, paintPoint: null, paintActive: false })
         audio.stopAll()
-        videoController?.pauseForTracking?.()
         updateDebug()
         return getSnapshot()
       },
@@ -911,9 +873,6 @@ export function initializePage1Controller({
         syncCanvasHints()
         updateDebug()
         return getSnapshot()
-      },
-      continueVideo() {
-        return videoController?.resumeAfterTracking?.() ?? false
       },
       stopCurrentGesture() {
         interaction?.stop()
@@ -943,7 +902,6 @@ export function initializePage1Controller({
     parallax?.destroy()
     hints.reset()
     audio.stopAll()
-    videoController?.stop()
     renderer.destroy()
     resizeObserver?.disconnect()
   }

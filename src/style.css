@@ -47,6 +47,18 @@
 .ar-start-screen h2 { color: #ffe2a2; }
 .ar-start-screen p { color: rgba(249, 224, 175, 0.78); }
 
+.entry-module-tags {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: -3px 0 20px;
+  color: rgba(239, 201, 127, 0.8);
+  font: 600 12px/1 system-ui, sans-serif;
+  letter-spacing: 0.14em;
+}
+
+.entry-module-tags i { opacity: 0.45; font-style: normal; }
+
 .ar-overlay-card > span {
   color: #8d5a2d;
   letter-spacing: 0.12em;
@@ -175,6 +187,132 @@
 .page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page3-ui,
 .page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page2-scan-guide,
 .page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page2-loading-status {
+  display: none !important;
+}
+
+/* 三页共用的模块标题、底部观看提示和追踪丢失提示。 */
+.page1-module-title,
+.page2-title,
+.page3-title {
+  display: none !important;
+}
+
+.module-header {
+  position: fixed;
+  z-index: 36;
+  top: calc(env(safe-area-inset-top) + 16px);
+  left: clamp(20px, 5.6vw, 24px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f5d88f;
+  text-shadow: 0 3px 14px rgba(12, 4, 2, 0.82);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.module-header span {
+  display: grid;
+  width: clamp(46px, 12vw, 52px);
+  height: clamp(46px, 12vw, 52px);
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(235, 189, 96, 0.78);
+  border-radius: 50%;
+  color: #edc675;
+  background: rgba(45, 17, 8, 0.66);
+  font: 700 14px/1 system-ui, sans-serif;
+}
+
+.module-header h1 {
+  margin: 0;
+  color: #f7dda0;
+  font: 700 clamp(28px, 7.6vw, 36px)/1 "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  letter-spacing: 0.12em;
+}
+
+.module-bottom-hint {
+  position: fixed;
+  z-index: 35;
+  right: 18px;
+  bottom: calc(env(safe-area-inset-bottom) + 8px);
+  left: 18px;
+  margin: 0;
+  color: rgba(245, 218, 163, 0.74);
+  text-align: center;
+  text-shadow: 0 2px 9px #120704;
+  font: 500 clamp(11px, 3vw, 13px)/1.45 system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.shared-target-lost {
+  position: fixed;
+  z-index: 58;
+  top: calc(env(safe-area-inset-top) + 84px);
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 36px);
+  margin: 0;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  border: 1px solid rgba(231, 179, 84, 0.65);
+  border-radius: 999px;
+  color: #ffe2a4;
+  background: rgba(52, 17, 9, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  text-align: center;
+  font: 700 13px/1.3 system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.module-loading-overlay {
+  position: fixed;
+  z-index: 56;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(330px, calc(100% - 40px));
+  transform: translate(-50%, -50%);
+  padding: 20px;
+  border: 1px solid rgba(229, 174, 77, 0.62);
+  border-radius: 16px;
+  color: #f8dda0;
+  background: rgba(35, 11, 7, 0.94);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+}
+
+.module-loading-overlay > strong { font-size: 17px; letter-spacing: 0.06em; }
+.module-loading-overlay > span { color: #e7b95e; font: 700 14px/1 system-ui, sans-serif; }
+.module-loading-overlay > i {
+  display: block;
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 226, 163, 0.15);
+}
+.module-loading-overlay > i > b {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #8f2d18, #e87a32, #f4ca69);
+  transition: width 160ms ease;
+}
+.module-loading-overlay button {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid rgba(232, 177, 78, 0.7);
+  border-radius: 999px;
+  color: #ffe1a0;
+  background: #6f2917;
+}
+
+.page1-ar:has(.page3-real-video-overlay:not([hidden])) > .module-header,
+.page1-ar:has(.page3-real-video-overlay:not([hidden])) > .module-bottom-hint,
+.page1-ar:has(.page3-complete-screen:not([hidden])) > .module-header,
+.page1-ar:has(.page3-complete-screen:not([hidden])) > .module-bottom-hint {
   display: none !important;
 }
 
@@ -1126,7 +1264,6 @@ canvas {
 .page1-ar.is-page2-active > .ar-start-screen,
 .page1-ar.is-page2-active > .ar-error-panel,
 .page1-ar.is-page2-active > .ar-lost-dialog,
-.page1-ar.is-page2-active > .ar-video-resume,
 .page1-ar.is-page2-active > .hold-interaction-hint,
 .page1-ar.is-page2-active > .paper-slider-hint,
 .page1-ar.is-page2-active > .paint-entry-hint,
@@ -1416,7 +1553,6 @@ canvas {
 .page1-ar.is-page3-active > .ar-start-screen,
 .page1-ar.is-page3-active > .ar-error-panel,
 .page1-ar.is-page3-active > .ar-lost-dialog,
-.page1-ar.is-page3-active > .ar-video-resume,
 .page1-ar.is-page3-active > .hold-interaction-hint,
 .page1-ar.is-page3-active > .paper-slider-hint,
 .page1-ar.is-page3-active > .paint-entry-hint,

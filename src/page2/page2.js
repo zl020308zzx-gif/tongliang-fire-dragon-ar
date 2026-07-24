@@ -202,6 +202,7 @@ export const page2UiMarkup = (config, debug = false) => `
     </div>
     <div class="page2-loading-track" aria-hidden="true"><i data-page2-loading-progress></i></div>
     <span data-page2-loading-count>${debug ? 'loaded 0｜decoded 0｜textures 0' : '0%'}</span>
+    <button type="button" data-page2-loading-retry hidden>资源加载失败，点击重试</button>
   </section>
   <p class="page2-scan-guide" role="status">请缓慢平放识别图体验更佳</p>
   <section class="page2-ui" aria-label="龙脉探源 AR 界面">
@@ -285,7 +286,18 @@ const setVisible = (entity, visible) => {
   entity.setAttribute('visible', visible)
 }
 
-export function createPage2Experience({ root, scene, target, anchor, config, debug, preloader = null, onActivate }) {
+export function createPage2Experience({
+  root,
+  scene,
+  target,
+  anchor,
+  config,
+  debug,
+  preloader = null,
+  onActivate,
+  onTrackingFound,
+  onTrackingLost,
+}) {
   const THREE = window.AFRAME.THREE
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
   const abortController = new AbortController()
@@ -976,6 +988,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     page2Runtime.entranceRequested = true
     root.querySelector('.page1-ar')?.classList.add('is-page2-active')
     onActivate?.()
+    onTrackingFound?.()
     stable.setTracked(true)
     startAssetLoading()
     if (!preloadSession.getSnapshot().criticalReady) {
@@ -1007,6 +1020,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       replayThresholdMs: config.rescanReplay.lostThresholdMs,
     })
     tracked = false
+    onTrackingLost?.()
     page2Runtime.targetVisible = false
     page2Runtime.lostStartedAt = performance.now()
     resumeState = state
@@ -1028,24 +1042,14 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   const confirmReplayAfterLoss = () => {
     if (tracked || !page2Runtime.lostStartedAt) return
     const lostDuration = performance.now() - page2Runtime.lostStartedAt
-    if (!config.rescanReplay.enabled || lostDuration < config.rescanReplay.lostThresholdMs) return
-    page2Runtime.replayArmed = true
-    page2Runtime.entranceRunId += 1
-    entranceFramePending = false
-    entranceTimelineActive = false
-    backgroundTimelineStarted = false
-    entranceAnimationFinished = false
-    overview.resetEntry()
-    overview.hide()
-    floorBase.hide()
-    setVisible(backgroundRoot, false)
-    model.hide()
-    particles.hide()
-    setHtmlVisible(overviewHint, false)
-    debugLog('page2ReplayArmed', {
+    if (lostDuration < config.rescanReplay.lostThresholdMs) return
+    // Long target loss keeps the exact overview/model state. Only an explicit
+    // restart or debug replay is allowed to rebuild the entrance timeline.
+    page2Runtime.replayArmed = false
+    debugLog('page2LongLossPreserved', {
       lostDuration: Math.round(lostDuration),
       thresholdMs: config.rescanReplay.lostThresholdMs,
-      runId: page2Runtime.entranceRunId,
+      resumeState,
     })
     updateReadinessDebug()
   }
@@ -1057,7 +1061,6 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     onFound({ firstFound, foundCount, lostCount }) {
       debugLog('targetFoundEvent', { firstFound, foundCount, lostCount, at: Math.round(performance.now()) })
       const shouldReplay = firstFound
-        || (page2Runtime.replayArmed && config.rescanReplay.enabled && config.rescanReplay.replayFullEntrance)
       activate({ replay: shouldReplay })
     },
     onLost(data) {
@@ -1067,7 +1070,8 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     onLostConfirmed: (data) => {
       debugLog('targetLostConfirmed', { ...data, thresholdMs: config.rescanReplay.lostThresholdMs })
       confirmReplayAfterLoss()
-      setHtmlVisible(lostNotice, true)
+      // The shared TargetLost component owns the visible notice for all modules.
+      setHtmlVisible(lostNotice, false)
     },
     onDebug: () => {},
   })
@@ -1390,7 +1394,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       suspended = true
       tracked = false
       page2Runtime.targetVisible = false
-      page2Runtime.replayArmed = true
+      page2Runtime.replayArmed = false
       page2Runtime.entranceRunId += 1
       stable.setTracked(false)
       setVisible(anchor, false)
@@ -1413,6 +1417,12 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       resumeState,
       fps,
       ...page2Runtime,
+      page2ModelLoaded,
+      pendingEnter: tracked && page2Runtime.entranceRequested && !page2Runtime.entranceStarted,
+      preload: {
+        ...preloadSession.getSnapshot(),
+        status: Object.fromEntries(preloadSession.getSnapshot().status),
+      },
       floorBase: floorBase.getDebugState(),
       backgroundFloorAngle: config.background.endRotationX,
     }),

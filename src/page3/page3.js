@@ -41,6 +41,7 @@ const setOpacity = (entity, opacity) => {
     materials.filter(Boolean).forEach((material) => {
       material.transparent = true
       material.opacity = value
+      if (material.uniforms?.uOpacity) material.uniforms.uOpacity.value = value
       material.needsUpdate = true
     })
   })
@@ -224,8 +225,9 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
       <span>保持手机斜向观察，立体舞台即将展开</span>
     </section>
     <section class="page3-loading page3-glass-card" role="status" hidden>
-      <strong>识别成功｜火舞夜空</strong>
+      <strong>正在加载《火舞夜空》</strong>
       <span data-page3-loading-text>正在准备火舞舞台</span>
+      <small data-page3-loading-progress>0%</small>
     </section>
     <section class="page3-step-card page3-glass-card" hidden>
       <span data-page3-step-number>01</span>
@@ -265,6 +267,12 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
     <p>鼓可点击 <b data-page3-debug-drum>false</b>｜击鼓次数 <b data-page3-debug-hits>0</b></p>
     <p>舞龙尺寸 <b data-page3-debug-dragon-size>—</b></p>
     <p>铁花尺寸 <b data-page3-debug-iron-size>—</b></p>
+    <p>平台视频 <b data-page3-debug-video-source>${config.platform.performanceVideoSource}</b></p>
+    <p>材质类型 <b data-page3-debug-material-type>${config.platform.performanceMaterialType}</b></p>
+    <p>舞龙/铁花 ready <b data-page3-debug-performance-ready>false / false</b></p>
+    <p>舞龙源 <b data-page3-debug-dragon-source>${config.assets.dragonVideo}</b></p>
+    <p>铁花源 <b data-page3-debug-iron-source>${config.assets.ironflowerVideo}</b></p>
+    <p>videoReadyState <b data-page3-debug-video-ready>0 / 0</b></p>
     <p>bgTextureReady <b data-page3-debug-bg-texture>false</b></p>
     <p>floorTextureReady <b data-page3-debug-floor-texture>false</b></p>
     <p>drumTextureReady <b data-page3-debug-drum-texture>false</b></p>
@@ -333,6 +341,8 @@ export function createPage3Experience({
   debug = false,
   preloader = null,
   onActivate,
+  onTrackingFound,
+  onTrackingLost,
 }) {
   registerPage3Runtime()
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
@@ -373,6 +383,7 @@ export function createPage3Experience({
   const placementGuide = root.querySelector('.page3-placement-guide')
   const loading = root.querySelector('.page3-loading')
   const loadingText = root.querySelector('[data-page3-loading-text]')
+  const loadingProgress = root.querySelector('[data-page3-loading-progress]')
   const stepCard = root.querySelector('.page3-step-card')
   const progress = root.querySelector('.page3-progress')
   const prompt = root.querySelector('.page3-drum-prompt')
@@ -429,6 +440,7 @@ export function createPage3Experience({
   let visibilityPaused = false
   const audioFades = new Map()
   const mediaPausedForTracking = new Set()
+  const chromaMaterials = new Set()
 
   const stable = createStableAnchorController({
     target,
@@ -538,6 +550,71 @@ export function createPage3Experience({
     debugOutput?.replaceChildren(`${video.videoWidth}×${video.videoHeight} → ${width.toFixed(3)}×${height.toFixed(3)}`)
   }
 
+  const applyIOSChromaMaterial = (video, plane) => {
+    if (!config.platform.isIOSWebKit || plane.__page3ChromaMaterial) return
+    const attach = (attempt = 0) => {
+      if (destroyed || plane.__page3ChromaMaterial) return
+      const mesh = plane.getObject3D('mesh')
+      if (!mesh && attempt < 30) {
+        requestAnimationFrame(() => attach(attempt + 1))
+        return
+      }
+      if (!mesh) {
+        showError('iOS 透明视频材质初始化失败')
+        return
+      }
+      const texture = new THREE.VideoTexture(video)
+      texture.minFilter = THREE.LinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.generateMipmaps = false
+      texture.colorSpace = THREE.SRGBColorSpace
+      const material = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.DoubleSide,
+        uniforms: {
+          map: { value: texture },
+          keyColor: { value: new THREE.Color(...config.chromaKey.color) },
+          similarity: { value: config.chromaKey.similarity },
+          smoothness: { value: config.chromaKey.smoothness },
+          spill: { value: config.chromaKey.spill },
+          uOpacity: { value: 0 },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D map;
+          uniform vec3 keyColor;
+          uniform float similarity;
+          uniform float smoothness;
+          uniform float spill;
+          uniform float uOpacity;
+          varying vec2 vUv;
+          void main() {
+            vec4 source = texture2D(map, vUv);
+            float keyDistance = distance(source.rgb, keyColor);
+            float alpha = smoothstep(similarity, similarity + smoothness, keyDistance);
+            float greenExcess = max(0.0, source.g - max(source.r, source.b));
+            vec3 despilled = source.rgb - vec3(0.0, greenExcess * spill, 0.0);
+            gl_FragColor = vec4(despilled, source.a * alpha * uOpacity);
+          }
+        `,
+      })
+      mesh.material?.dispose?.()
+      mesh.material = material
+      plane.__page3ChromaMaterial = material
+      chromaMaterials.add(material)
+      applyRenderOrder(plane, Number(plane.dataset.renderOrder))
+    }
+    attach()
+  }
+
   dragonVideo.addEventListener('loadedmetadata', () => {
     updateMediaPlaneSize(
       dragonVideo,
@@ -546,6 +623,7 @@ export function createPage3Experience({
       root.querySelector('[data-page3-debug-dragon-size]'),
     )
     dragonPlane.setAttribute('src', '#page3-dragon-video')
+    applyIOSChromaMaterial(dragonVideo, dragonPlane)
   }, { signal })
   ironflowerVideo.addEventListener('loadedmetadata', () => {
     updateMediaPlaneSize(
@@ -555,6 +633,7 @@ export function createPage3Experience({
       root.querySelector('[data-page3-debug-iron-size]'),
     )
     ironflowerPlane.setAttribute('src', '#page3-ironflower-video')
+    applyIOSChromaMaterial(ironflowerVideo, ironflowerPlane)
   }, { signal })
 
   const bindReadyAssets = (snapshot) => {
@@ -568,6 +647,7 @@ export function createPage3Experience({
     })
     criticalReady = snapshot.criticalReady
     deferredSettled = snapshot.deferredSettled
+    loadingProgress.textContent = `${Math.round(snapshot.criticalProgress || 0)}%`
     stageAssetsReady = ['stageFront', 'stageLights', 'pearl', 'drumSfx']
       .every((key) => snapshot.status.get(key) === 'ready')
     dragonReady = snapshot.status.get('dragonVideo') === 'ready'
@@ -1069,6 +1149,10 @@ export function createPage3Experience({
     root.querySelector('[data-page3-debug-critical]').textContent = String(criticalReady)
     root.querySelector('[data-page3-debug-deferred]').textContent = String(deferredSettled)
     root.querySelector('[data-page3-debug-hits]').textContent = String(drumHitCount)
+    root.querySelector('[data-page3-debug-performance-ready]').textContent =
+      `${dragonReady} / ${ironflowerReady}`
+    root.querySelector('[data-page3-debug-video-ready]').textContent =
+      `${dragonVideo.readyState} / ${ironflowerVideo.readyState}`
     root.querySelector('[data-page3-debug-bg-texture]').textContent = String(diagnostics.bgTextureReady)
     root.querySelector('[data-page3-debug-floor-texture]').textContent = String(diagnostics.floorTextureReady)
     root.querySelector('[data-page3-debug-drum-texture]').textContent = String(diagnostics.drumTextureReady)
@@ -1139,7 +1223,8 @@ export function createPage3Experience({
       placementGuide.hidden = true
       foundationRenderFrames = config.foundation.readyRenderFrames
       foundationReady = true
-      preloaderSession.loadDeferred().catch(() => {})
+      preloaderSession.loadStageAssets().catch((error) => showError(error.message))
+      preloaderSession.loadDragonAssets().catch((error) => showError(error.message))
     } else if (state === PAGE3_STATES.STAGE_BUILDING) {
       setVisible(stageBack, true)
       setVisible(stageFront, true)
@@ -1149,6 +1234,8 @@ export function createPage3Experience({
       setOpacity(stageFront, 1)
       setOpacity(stageLights, 0.5)
     } else if (state === PAGE3_STATES.PEARL_GUIDING) {
+      preloaderSession.loadDragonAssets().catch((error) => showError(error.message))
+      preloaderSession.loadClimaxAssets().catch((error) => showError(error.message))
       setVisible(pearlRoot, true)
       setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 0)
     } else if (state === PAGE3_STATES.DRAGON_DANCING) {
@@ -1303,7 +1390,16 @@ export function createPage3Experience({
       else if (action === 'close-real-video') closeRealVideo()
       else if (action === 'retry') {
         hideError()
-        preloaderSession.retryFailed().then(() => preloaderSession.loadDeferred()).catch(() => {})
+        preloaderSession.retryFailed().then(() => {
+          if ([PAGE3_STATES.HIDDEN, PAGE3_STATES.LOADING].includes(state)) return preloaderSession.loadCritical()
+          if ([PAGE3_STATES.READY, PAGE3_STATES.STAGE_BUILDING, PAGE3_STATES.WAIT_PEARL].includes(state)) {
+            return preloaderSession.loadStageAssets()
+          }
+          if ([PAGE3_STATES.PEARL_GUIDING, PAGE3_STATES.WAIT_DRAGON].includes(state)) {
+            return preloaderSession.loadDragonAssets()
+          }
+          return preloaderSession.loadClimaxAssets()
+        }).catch((error) => showError(error.message))
       }
     }, { signal })
   })
@@ -1371,6 +1467,7 @@ export function createPage3Experience({
     root.querySelector('.page1-ar')?.classList.remove('is-page2-active')
     root.querySelector('.page1-ar')?.classList.add('is-page3-active')
     onActivate?.()
+    onTrackingFound?.()
     stable.setTracked(true)
     lostNotice.hidden = true
     ui.hidden = false
@@ -1401,6 +1498,7 @@ export function createPage3Experience({
     }
     tracked = false
     lostStartedAt = performance.now()
+    onTrackingLost?.()
     stable.setTracked(false)
     pauseForTracking()
     renderDebug()
@@ -1414,7 +1512,8 @@ export function createPage3Experience({
     onLost: loseTracking,
     onLostConfirmed() {
       if (!tracked && ![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) {
-        lostNotice.hidden = false
+        // The shared TargetLost component owns the visible notice for all modules.
+        lostNotice.hidden = true
       }
     },
     onDebug: () => {},
@@ -1738,6 +1837,12 @@ export function createPage3Experience({
       drumHitCount,
       criticalReady,
       deferredSettled,
+      pendingEnter: tracked && state === PAGE3_STATES.HIDDEN,
+      preload: preloaderSession.getSnapshot(),
+      performanceVideoSource: config.platform.performanceVideoSource,
+      performanceMaterialType: config.platform.performanceMaterialType,
+      dragonReady,
+      ironflowerReady,
       fps,
       foundation: getFoundationDiagnostics(),
       backgroundFloorAngle: config.layout.backboardHinge.rotationEndDegrees[0],
@@ -1752,6 +1857,11 @@ export function createPage3Experience({
       preloaderSession.destroy()
       stopStageMedia()
       stopAndReset(realVideoPlayer)
+      chromaMaterials.forEach((material) => {
+        material.uniforms?.map?.value?.dispose?.()
+        material.dispose()
+      })
+      chromaMaterials.clear()
       if (scene.__page3RuntimeTick === update) scene.__page3RuntimeTick = null
       root.querySelector('.page1-ar')?.classList.remove('is-page3-active')
       if (debug) {

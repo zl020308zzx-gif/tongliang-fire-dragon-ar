@@ -5,7 +5,6 @@ export function createArUiController({ root, signal, actions }) {
   const startButton = root.querySelector('[data-ar-action="start"]')
   const scanStatus = root.querySelector('.ar-scan-status')
   const lostDialog = root.querySelector('.ar-lost-dialog')
-  const videoResume = root.querySelector('.ar-video-resume')
   const errorPanel = root.querySelector('.ar-error-panel')
   const hotspotLabel = root.querySelector('.ar-hotspot-label')
 
@@ -18,7 +17,6 @@ export function createArUiController({ root, signal, actions }) {
     scanStatus.hidden = true
     waitingScreen.hidden = true
     lostDialog.hidden = true
-    videoResume.hidden = true
     errorPanel.hidden = true
   }
 
@@ -75,12 +73,6 @@ export function createArUiController({ root, signal, actions }) {
     },
     hideLost() {
       lostDialog.hidden = true
-    },
-    showVideoResume() {
-      videoResume.hidden = false
-    },
-    hideVideoResume() {
-      videoResume.hidden = true
     },
     showError(message) {
       startScreen.hidden = true

@@ -82,21 +82,20 @@ export function createUiController({ root, states, signal, actions, copy, stampD
     else if (state === states.COLOR_PAINT) apply(copy.steps.paint, progress.paint > 0 ? '继续在有效区域内涂抹，达到覆盖范围后将自动补全。' : '在龙首区域内连续涂抹，画笔离开后返回仍可继续。')
     else if (state === states.COLOR_COMPLETE) apply(copy.steps.paint, '彩绘完成，龙头的色彩与纹样已经补全。')
     else if (state === states.EYE_READY) apply(copy.steps.eye, '点击龙眼，唤醒火龙。')
-    else if (state === states.VIDEO_PLAYING) apply(copy.steps.video, '正在唤醒火龙……')
     else if (state === states.AWAKEN_REVIEW) {
-      apply(copy.steps.video, '火龙已苏醒，点击按钮进入工艺总览。')
+      apply(copy.steps.awaken, '火龙已苏醒，点击按钮进入工艺总览。')
       showActions('review')
     } else if (state === states.EXPLODE_TRANSITION) apply(copy.steps.overview, '线稿、竹骨、裱糊和彩绘层正在展开……')
     else if (state === states.EXPLODE_VIEW) {
       apply(copy.steps.overview, '点击图层标签，查看每一层新增的结构与工艺细节。')
-      showActions('overview', 'restart', 'end')
+      showActions('restart', 'end')
     } else if (state === states.LAYER_FOCUS) {
       const layer = copy.layers[meta.selectedLayer] ?? copy.layers.color
       apply({ number: '工艺图层', ...layer }, '查看画面中的局部标注；再次点击当前标签可返回全貌。')
-      showActions('overview', 'restart', 'end')
+      showActions('restart', 'end')
     } else if (state === states.COMPLETED) {
       apply(copy.steps.overview, '第一页体验已完成，可继续扫描其他模块。')
-      showActions('overview', 'restart', 'end')
+      showActions('restart', 'end')
     }
     if (stateChanged) {
       if (state === states.BAMBOO_COMPLETE) showFeedback(copy.feedback.bamboo)
@@ -121,10 +120,6 @@ export function createUiController({ root, states, signal, actions, copy, stampD
     setState,
     updateProgress,
     showFeedback,
-    showVideoFailure() {
-      showActions('retry', 'skip')
-      hint.innerHTML = '<span>操作提示</span>视频未能播放，可重新播放或跳过。'
-    },
     showEndMessage() {
       endNotice.textContent = '第一页体验已完成，可继续扫描其他模块。'
       endNotice.hidden = false

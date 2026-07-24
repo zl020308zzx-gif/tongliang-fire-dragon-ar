@@ -212,15 +212,13 @@ export function createCraftRenderer({
     const lineart = getLayer('lineart')
     const bamboo = getLayer('bamboo')
     try {
-      const [lineartImage, bambooImage] = await Promise.all([
-        loadImage(lineart.path),
-        loadImage(bamboo.path),
-      ])
+      const lineartImage = await loadImage(lineart.path)
+      const bambooImage = normalizedProgress > 0 ? await loadImage(bamboo.path) : null
       clearError()
       baseContext.clearRect(0, 0, canvas.width, canvas.height)
       if (lineartOpacity > 0) drawFull(baseContext, lineartImage, lineartOpacity)
 
-      if (normalizedProgress > 0) {
+      if (normalizedProgress > 0 && bambooImage) {
         const radius = bambooMask.maxRadius * normalizedProgress
         const solidRadius = Math.max(0, radius - bambooMask.featherWidth)
         const centerX = canvas.width * bambooMask.center.x

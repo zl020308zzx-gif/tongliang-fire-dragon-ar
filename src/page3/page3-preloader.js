@@ -2,6 +2,10 @@ import {
   PAGE3_CRITICAL_IMAGE_KEYS,
   PAGE3_IMAGE_ENTRIES,
 } from './page3-config.js'
+import {
+  loadImageElement as loadSharedImageElement,
+  loadMediaElement as loadSharedMediaElement,
+} from '../module-asset-loader.js'
 
 const sessions = new WeakMap()
 const imageIdByKey = new Map(PAGE3_IMAGE_ENTRIES.map(([id, key]) => [key, id]))
@@ -18,75 +22,15 @@ const mediaEntries = Object.freeze([
   ['page3-ironflower-sfx', 'ironflowerSfx', 'audio'],
 ])
 
-const loadImageElement = async (image, path) => {
-  if (!(image instanceof HTMLImageElement)) throw new Error(`[page3] 缺少图片元素：${path}`)
-  if (image.dataset.loaded === 'true' && image.naturalWidth > 0) return image
-  await new Promise((resolve, reject) => {
-    const cleanup = () => {
-      image.removeEventListener('load', onLoad)
-      image.removeEventListener('error', onError)
-    }
-    const onLoad = () => {
-      cleanup()
-      image.dataset.loaded = 'true'
-      resolve()
-    }
-    const onError = () => {
-      cleanup()
-      reject(new Error(`[page3] 图片加载失败：${path}`))
-    }
-    image.addEventListener('load', onLoad, { once: true })
-    image.addEventListener('error', onError, { once: true })
-    if (!image.src) image.src = path
-    if (image.complete) {
-      if (image.naturalWidth > 0) onLoad()
-      else onError()
-    }
+const loadImageElement = (image, path) =>
+  loadSharedImageElement(image, path).catch((error) => {
+    throw new Error(`[page3] ${error.message}`)
   })
-  if (typeof image.decode === 'function') {
-    try {
-      await image.decode()
-    } catch (error) {
-      if (image.naturalWidth <= 0) throw error
-    }
-  }
-  return image
-}
 
-const loadMediaElement = (media, path, type) => {
-  if (!(media instanceof HTMLMediaElement)) {
-    return Promise.reject(new Error(`[page3] 缺少${type === 'video' ? '视频' : '音频'}元素：${path}`))
-  }
-  if (media.dataset.loaded === 'true' && media.readyState >= 2) return Promise.resolve(media)
-  return new Promise((resolve, reject) => {
-    const readyEvents = type === 'video'
-      ? ['loadeddata', 'canplay', 'canplaythrough']
-      : ['canplay', 'canplaythrough']
-    const cleanup = () => {
-      readyEvents.forEach((eventName) => media.removeEventListener(eventName, onReady))
-      media.removeEventListener('error', onError)
-    }
-    const onReady = () => {
-      if (media.readyState < 2) return
-      cleanup()
-      media.dataset.loaded = 'true'
-      resolve(media)
-    }
-    const onError = () => {
-      cleanup()
-      const mediaError = media.error?.message || media.error?.code || '未知媒体错误'
-      reject(new Error(`[page3] 媒体加载失败：${path}（${mediaError}）`))
-    }
-    readyEvents.forEach((eventName) => media.addEventListener(eventName, onReady))
-    media.addEventListener('error', onError, { once: true })
-    if (!media.src) {
-      media.src = path
-      media.preload = 'auto'
-      media.load()
-    }
-    if (media.readyState >= 2) onReady()
+const loadMediaElement = (media, path, type) =>
+  loadSharedMediaElement(media, path, type).catch((error) => {
+    throw new Error(`[page3] ${error.message}`)
   })
-}
 
 export function createPage3Preloader({ root, config, debug = false }) {
   const existing = sessions.get(root)
@@ -97,7 +41,9 @@ export function createPage3Preloader({ root, config, debug = false }) {
   const errors = new Map()
   const listeners = new Set()
   let criticalPromise = null
-  let deferredPromise = null
+  let stagePromise = null
+  let dragonPromise = null
+  let climaxPromise = null
   let realVideoPromise = null
   let destroyed = false
 
@@ -107,6 +53,10 @@ export function createPage3Preloader({ root, config, debug = false }) {
     const deferredSettled = deferredKeys.every((key) => ['ready', 'failed'].includes(status.get(key)))
     return {
       criticalReady,
+      criticalProgress: PAGE3_CRITICAL_IMAGE_KEYS.length
+        ? (PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => status.get(key) === 'ready').length / PAGE3_CRITICAL_IMAGE_KEYS.length) * 100
+        : 100,
+      criticalFailed: PAGE3_CRITICAL_IMAGE_KEYS.some((key) => status.get(key) === 'failed'),
       deferredSettled,
       failedCount: errors.size,
       status: new Map(status),
@@ -172,15 +122,39 @@ export function createPage3Preloader({ root, config, debug = false }) {
     return criticalPromise
   }
 
-  const loadDeferred = () => {
-    if (!deferredPromise) {
-      deferredPromise = Promise.allSettled([
-        ...deferredImageKeys.map(loadImage),
-        ...mediaEntries.map(([, key]) => loadMedia(key)),
+  const loadStageAssets = () => {
+    if (!stagePromise) {
+      stagePromise = Promise.allSettled([
+        ...['stageFront', 'stageLights', 'pearl'].map(loadImage),
+        loadMedia('drumSfx'),
       ]).then(() => snapshot())
     }
-    return deferredPromise
+    return stagePromise
   }
+
+  const loadDragonAssets = () => {
+    if (!dragonPromise) {
+      dragonPromise = Promise.allSettled([
+        loadMedia('dragonVideo'),
+        loadMedia('dragonBgm'),
+      ]).then(() => snapshot())
+    }
+    return dragonPromise
+  }
+
+  const loadClimaxAssets = () => {
+    if (!climaxPromise) {
+      climaxPromise = Promise.allSettled([
+        loadMedia('ironflowerVideo'),
+        loadMedia('climaxBgm'),
+        loadMedia('ironflowerSfx'),
+      ]).then(() => snapshot())
+    }
+    return climaxPromise
+  }
+
+  const loadDeferred = () =>
+    Promise.allSettled([loadStageAssets(), loadDragonAssets(), loadClimaxAssets()]).then(() => snapshot())
 
   const loadRealVideo = () => {
     if (realVideoPromise) return realVideoPromise
@@ -200,6 +174,9 @@ export function createPage3Preloader({ root, config, debug = false }) {
   const session = {
     rootImage: root.querySelector('#page3-background-asset'),
     loadCritical,
+    loadStageAssets,
+    loadDragonAssets,
+    loadClimaxAssets,
     loadDeferred,
     loadRealVideo,
     retryFailed() {
@@ -211,7 +188,9 @@ export function createPage3Preloader({ root, config, debug = false }) {
       })
       if (failedKeys.includes('realVideo')) realVideoPromise = null
       criticalPromise = null
-      deferredPromise = null
+      stagePromise = null
+      dragonPromise = null
+      climaxPromise = null
       return Promise.allSettled(failedKeys.map((key) => {
         if (key === 'realVideo') return loadRealVideo()
         return imageIdByKey.has(key) ? loadImage(key) : loadMedia(key)

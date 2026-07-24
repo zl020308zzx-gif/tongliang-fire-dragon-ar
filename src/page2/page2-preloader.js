@@ -1,3 +1,5 @@
+import { loadImageElement } from '../module-asset-loader.js'
+
 export const PAGE2_ASSET_ENTRIES = Object.freeze([
   ['page2-floor-asset', 'floor'],
   ['page2-background-asset', 'background'],
@@ -58,33 +60,9 @@ const addImagePreload = (url) => {
 }
 
 const loadAndDecodeImage = async (img, url, onLoaded) => {
-  const absoluteUrl = new URL(url, document.baseURI).href
-  if (img.currentSrc !== absoluteUrl && img.src !== absoluteUrl) img.src = url
-  if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
-    await new Promise((resolve, reject) => {
-      const cleanup = () => {
-        img.removeEventListener('load', onLoad)
-        img.removeEventListener('error', onError)
-      }
-      const onLoad = () => { cleanup(); resolve() }
-      const onError = () => { cleanup(); reject(new Error(`[page2] Image load failed: ${url}`)) }
-      img.addEventListener('load', onLoad, { once: true })
-      img.addEventListener('error', onError, { once: true })
-      if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) onLoad()
-    })
-  }
-  if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
-    throw new Error(`[page2] Image incomplete: ${url}`)
-  }
+  const ready = await loadImageElement(img, url)
   onLoaded()
-  if (typeof img.decode === 'function') {
-    try {
-      await img.decode()
-    } catch (error) {
-      if (img.naturalWidth <= 0 || img.naturalHeight <= 0) throw error
-    }
-  }
-  return img
+  return ready
 }
 
 const timingDifference = (events, from, to) => (
@@ -112,6 +90,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   const timingEvents = Object.create(null)
   const timingDetails = Object.create(null)
   const timers = new Set()
+  const failedKeys = new Set()
   const maxConcurrency = isMobile() ? 3 : 4
   let requestedCount = 0
   let loadedCount = 0
@@ -165,6 +144,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     const criticalReady = targetReady
       && decodedCriticalImages.size === criticalImageTotal
       && criticalTextures.size === criticalImageTotal
+    const criticalFailed = targetFailed
+      || PAGE2_CRITICAL_IMAGE_KEYS.some((key) => status.get(key) === 'failed')
     return {
       requestedCount,
       loadedCount,
@@ -175,6 +156,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       progress: criticalProgress,
       criticalProgress,
       criticalReady,
+      criticalFailed,
       criticalImageTotal,
       criticalImagesLoaded: loadedCriticalImages.size,
       criticalImagesDecoded: decodedCriticalImages.size,
@@ -196,8 +178,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     if (uiDismissed) return
     const panel = root.querySelector('#page2-loading-status')
     if (!panel) return
-    panel.querySelector('.page2-loading-copy strong').textContent = '《龙脉铜梁》'
-    panel.querySelector('.page2-loading-copy span').textContent = '——铜梁火龙非遗AR互动体验设计'
+    panel.querySelector('.page2-loading-copy strong').textContent = '正在加载《龙脉探源》'
+    panel.querySelector('.page2-loading-copy span').textContent = '核心资源就绪后将自动进入'
     const detail = panel.querySelector('[data-page2-loading-detail]')
     const progress = panel.querySelector('[data-page2-loading-progress]')
     const count = panel.querySelector('[data-page2-loading-count]')
@@ -210,6 +192,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       ? `loaded ${current.loadedCount}｜decoded ${current.decodedCount}｜textures ${current.criticalTexturesReady}`
       : `${Math.round(current.criticalProgress)}%`
     panel.dataset.status = current.criticalReady ? 'ready' : 'loading'
+    panel.querySelector('[data-page2-loading-retry]').hidden = !current.criticalFailed
     panel.classList.remove('is-complete')
     panel.hidden = false
     if (debug) panel.title = JSON.stringify(current.timing)
@@ -261,6 +244,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
         return ready
       } catch (error) {
         failedCount += 1
+        failedKeys.add(key)
         status.set(key, 'failed')
         emit()
         console.error('[page2] Preload failed', { key, url, error })
@@ -283,6 +267,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       return { byteLength: buffer.byteLength }
     } catch (error) {
       targetFailed = true
+      failedKeys.add(TARGETS_TASK)
       emit()
       console.error('[page2] targets.mind preload failed', { url: config.targets, error })
       throw error
@@ -350,6 +335,27 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     criticalPromise: null,
     promise: null,
     concurrency: maxConcurrency,
+    retryFailed() {
+      const retryQueue = [...failedKeys]
+      if (!retryQueue.length) return Promise.resolve(snapshot())
+      retryQueue.forEach((key) => {
+        failedKeys.delete(key)
+        if (key === TARGETS_TASK) {
+          targetFailed = false
+          targetReady = false
+        } else {
+          imagePromises.delete(key)
+          status.set(key, 'deferred')
+        }
+      })
+      failedCount = Math.max(0, failedCount - retryQueue.filter((key) => key !== TARGETS_TASK).length)
+      phaseMessage = '正在重试失败资源'
+      uiDismissed = false
+      emit()
+      session.criticalPromise = runQueue(retryQueue)
+      session.promise = session.criticalPromise
+      return session.criticalPromise.then(() => snapshot())
+    },
     destroy() {
       destroyed = true
       listeners.clear()
@@ -359,6 +365,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   }
 
   sessions.set(root, session)
+  const retryButton = root.querySelector('[data-page2-loading-retry]')
+  if (retryButton) retryButton.onclick = () => session.retryFailed()
   emit()
   session.criticalPromise = runQueue([...criticalQueue])
   // Non-critical modules are intentionally left deferred here. The overview
