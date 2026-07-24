@@ -26,12 +26,10 @@ export function createPage2Floor({ root, config, debug = false }) {
   const basis = new THREE.Matrix4().makeBasis(widthAxis, depthAxis, upAxis)
   const geometry = new THREE.PlaneGeometry(floor.widthUnit, floor.depthUnit)
   geometry.applyMatrix4(basis)
-  const material = new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshBasicMaterial({
     color: floor.color,
     transparent: true,
     opacity: 0,
-    roughness: floor.roughness,
-    metalness: floor.metalness,
     depthTest: true,
     depthWrite: true,
     side: THREE.DoubleSide,
@@ -74,6 +72,22 @@ export function createPage2Floor({ root, config, debug = false }) {
   let active = false
   let elapsed = 0
   let activeRunId = 0
+  let texture = null
+  let textureReady = false
+
+  const bindImage = (image) => {
+    if (!image?.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      throw new Error(`[page2] Floor image is not decoded: ${floor.texture}`)
+    }
+    texture?.dispose?.()
+    texture = new THREE.Texture(image)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.needsUpdate = true
+    material.map = texture
+    material.needsUpdate = true
+    textureReady = true
+    return texture
+  }
 
   const reset = (runId = activeRunId) => {
     activeRunId = runId
@@ -87,6 +101,7 @@ export function createPage2Floor({ root, config, debug = false }) {
 
   return {
     axes: { widthAxis, depthAxis, upAxis },
+    bindImage,
     reset,
     start(runId) {
       reset(runId)
@@ -123,6 +138,13 @@ export function createPage2Floor({ root, config, debug = false }) {
         clearanceMm: floor.clearanceMm,
         clearanceUnit: floor.clearanceUnit,
         opacity: material.opacity,
+        textureReady,
+        scale: mesh.scale.toArray(),
+        rotationDegrees: [
+          THREE.MathUtils.radToDeg(mesh.rotation.x),
+          THREE.MathUtils.radToDeg(mesh.rotation.y),
+          THREE.MathUtils.radToDeg(mesh.rotation.z),
+        ],
         worldPosition: world.toArray(),
         widthAxis: widthAxis.toArray(),
         depthAxis: depthAxis.toArray(),
@@ -134,6 +156,7 @@ export function createPage2Floor({ root, config, debug = false }) {
       entity.object3D.remove(debugGroup)
       geometry.dispose()
       material.dispose()
+      texture?.dispose?.()
       debugGroup.traverse((object) => {
         object.geometry?.dispose?.()
         object.material?.dispose?.()
@@ -141,4 +164,3 @@ export function createPage2Floor({ root, config, debug = false }) {
     },
   }
 }
-

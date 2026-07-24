@@ -1,4 +1,5 @@
 import { assetUrl } from './asset-url.js'
+import { SHARED_FOLDOUT_LAYOUT } from './shared-foldout-layout.js'
 
 const PAGE1_DIRECTORY = assetUrl('assets/page1/images/page1')
 const FRONT_DIRECTION_SIGN = 1
@@ -6,13 +7,14 @@ const A5_WIDTH_MM = 148
 const A5_HEIGHT_MM = 210
 const A5_ASPECT_RATIO = A5_HEIGHT_MM / A5_WIDTH_MM
 const PANEL_HEIGHT = 6.8
-const PANEL_WIDTH = PANEL_HEIGHT / A5_ASPECT_RATIO
+const PANEL_WIDTH = PANEL_HEIGHT * (536 / 999)
 const CRAFT_WIDTH = 3.42
 const CRAFT_HEIGHT = CRAFT_WIDTH * (1024 / 1041)
 
 export const PAGE1_PREVIEW_CONFIG = {
   assets: {
     backgroundBoard: `${PAGE1_DIRECTORY}/craft-panel.png`,
+    floorBase: `${PAGE1_DIRECTORY}/craft-panel-base.png`,
     bambooBundle: `${PAGE1_DIRECTORY}/bamboo-bundle.png`,
     bambooBuildAudio: assetUrl('assets/page1/audio/bamboo-build.mp3'),
     paperCoverAudio: assetUrl('assets/page1/audio/paper-cover.mp3'),
@@ -235,7 +237,7 @@ export const PAGE1_PREVIEW_CONFIG = {
   },
   backgroundBoard: {
     position: [0, 0, -0.08],
-    // A5 竖版：148 × 210。
+    // 保持 craft-panel.png 的 536 × 999 原始比例。
     size: { width: PANEL_WIDTH, height: PANEL_HEIGHT },
     rotation: [0, 0, 0],
   },
@@ -341,18 +343,36 @@ export const PAGE1_PREVIEW_CONFIG = {
     },
     arPanel: {
       frontDirectionSign: FRONT_DIRECTION_SIGN,
-      baseScale: 0.18,
+      baseScale: SHARED_FOLDOUT_LAYOUT.backgroundBoard.height / PANEL_HEIGHT,
       modes: {
         vertical: {
-          hingePosition: { x: 0, y: A5_ASPECT_RATIO / 2, z: 0.008 },
-          contentPosition: { x: 0, y: 0.544, z: 0 },
+          hingePosition: {
+            x: SHARED_FOLDOUT_LAYOUT.backboardHinge.position[0],
+            y: SHARED_FOLDOUT_LAYOUT.backboardHinge.position[1],
+            z: SHARED_FOLDOUT_LAYOUT.backboardHinge.position[2],
+          },
+          contentPosition: {
+            x: SHARED_FOLDOUT_LAYOUT.backgroundBoard.localPosition[0],
+            y: SHARED_FOLDOUT_LAYOUT.backgroundBoard.localPosition[1],
+            z: SHARED_FOLDOUT_LAYOUT.backgroundBoard.localPosition[2],
+          },
           startRotation: { x: 0, y: 0, z: 0 },
-          endRotation: { x: 74, y: 0, z: 0 },
+          endRotation: { x: SHARED_FOLDOUT_LAYOUT.backboardHinge.rotationEndDegrees[0], y: 0, z: 0 },
           frontOffset: 0.018,
-          scale: 0.89,
+          scale: 1,
           animationDuration: 900,
         },
       },
+    },
+    floor: {
+      width: SHARED_FOLDOUT_LAYOUT.floor.width,
+      height: SHARED_FOLDOUT_LAYOUT.floor.depth,
+      position: [...SHARED_FOLDOUT_LAYOUT.floor.position],
+      rotation: [...SHARED_FOLDOUT_LAYOUT.floor.rotationDegrees],
+      scale: [...SHARED_FOLDOUT_LAYOUT.floor.scale],
+      opacity: 1,
+      renderOrder: SHARED_FOLDOUT_LAYOUT.floor.renderOrder,
+      readyRenderFrames: 2,
     },
     tracking: {
       lostDelayMs: 800,

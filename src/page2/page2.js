@@ -823,7 +823,10 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
   }
 
   const bindReadyImage = async (id, key, imageElement) => {
-    const entitiesForAsset = [...root.querySelectorAll(`[data-page2-asset-key="${key}"]`)]
+    const entitiesForAsset = key === 'floor'
+      ? [root.querySelector('#page2-floor-base')].filter(Boolean)
+      : [...root.querySelectorAll(`[data-page2-asset-key="${key}"]`)]
+    if (key === 'floor') floorBase.bindImage(imageElement)
     if (key !== 'background' && entitiesForAsset.length === 0) {
       throw new Error(`[page2] No real layer entity for asset: ${key}`)
     }
@@ -831,8 +834,10 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       const visibleWhileBinding = key === 'background'
       entity.setAttribute('visible', visibleWhileBinding)
       entity.object3D.visible = visibleWhileBinding
-      entity.setAttribute('material', 'opacity', key === 'background' ? 1 : 0)
-      entity.setAttribute('src', `#${id}`)
+      if (key !== 'floor') {
+        entity.setAttribute('material', 'opacity', key === 'background' ? 1 : 0)
+        entity.setAttribute('src', `#${id}`)
+      }
     })
     const textures = new Set()
     for (let attempt = 0; attempt < 6 && textures.size === 0; attempt += 1) {
@@ -932,6 +937,7 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
     if (assetLoadingPromise || destroyed) return assetLoadingPromise
     assetLoadingPromise = (async () => {
       const results = await Promise.allSettled([
+        loadAsset('floor'),
         loadAsset('background'),
         ...moduleAssetKeys.initial.map((key) => loadAsset(key)),
       ])
@@ -1400,7 +1406,16 @@ export function createPage2Experience({ root, scene, target, anchor, config, deb
       resumeState = stateBeforeSuspension
       activate({ replay: page2Runtime.replayArmed })
     },
-    getState: () => ({ state, tracked, suspended, resumeState, fps, ...page2Runtime }),
+    getState: () => ({
+      state,
+      tracked,
+      suspended,
+      resumeState,
+      fps,
+      ...page2Runtime,
+      floorBase: floorBase.getDebugState(),
+      backgroundFloorAngle: config.background.endRotationX,
+    }),
     destroy() {
       destroyed = true
       abortController.abort()

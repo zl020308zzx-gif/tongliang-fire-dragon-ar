@@ -1,4 +1,5 @@
 export const PAGE2_ASSET_ENTRIES = Object.freeze([
+  ['page2-floor-asset', 'floor'],
   ['page2-background-asset', 'background'],
   ['page2-title-asset', 'title'],
   ['page2-intro-dragon-asset', 'introDragon'],
@@ -24,6 +25,7 @@ export const PAGE2_ASSET_ENTRIES = Object.freeze([
 ])
 
 export const PAGE2_CRITICAL_IMAGE_KEYS = Object.freeze([
+  'floor',
   'background',
   'title',
   'mainBase',

@@ -34,6 +34,19 @@
   text-align: center;
 }
 
+.ar-start-screen {
+  border-color: rgba(222, 168, 73, 0.58);
+  color: #f5dfad;
+  background:
+    radial-gradient(circle at 50% 0, rgba(139, 47, 25, 0.34), transparent 52%),
+    linear-gradient(150deg, rgba(39, 14, 10, 0.98), rgba(20, 8, 6, 0.98));
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.58), inset 0 0 28px rgba(196, 96, 39, 0.08);
+}
+
+.ar-start-screen > span { color: #e4b965; }
+.ar-start-screen h2 { color: #ffe2a2; }
+.ar-start-screen p { color: rgba(249, 224, 175, 0.78); }
+
 .ar-overlay-card > span {
   color: #8d5a2d;
   letter-spacing: 0.12em;
@@ -92,6 +105,83 @@
 
 .ar-scan-status.is-confirmed {
   animation: bamboo-snap-feedback 420ms ease-out;
+}
+
+.project-title {
+  position: fixed;
+  z-index: 36;
+  top: max(22px, calc(env(safe-area-inset-top) + 10px));
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  width: min(92vw, 560px);
+  transform: translateX(-50%);
+  color: #f4d58e;
+  text-align: center;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.72);
+  pointer-events: none;
+}
+
+.project-title strong {
+  font: 700 clamp(28px, 7vw, 42px)/1.08 "STKaiti", "KaiTi", serif;
+  letter-spacing: 0.18em;
+}
+
+.project-title span {
+  color: rgba(240, 207, 141, 0.82);
+  font: 600 12px/1.35 system-ui, sans-serif;
+  letter-spacing: 0.18em;
+}
+
+.ar-waiting-screen {
+  position: fixed;
+  z-index: 35;
+  top: max(128px, calc(env(safe-area-inset-top) + 112px));
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(90vw, 520px);
+  transform: translateX(-50%);
+  padding: 13px 18px;
+  border: 1px solid rgba(222, 170, 78, 0.5);
+  border-radius: 14px;
+  color: #ffe5a6;
+  background: rgba(36, 13, 8, 0.78);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
+  text-align: center;
+  pointer-events: none;
+  backdrop-filter: blur(7px);
+}
+
+.ar-waiting-screen strong {
+  font: 700 18px/1.2 "STKaiti", "KaiTi", serif;
+  letter-spacing: 0.12em;
+}
+
+.ar-waiting-screen small {
+  color: rgba(245, 215, 158, 0.75);
+  font: 500 11px/1.5 system-ui, sans-serif;
+}
+
+.page1-module-title { display: none; }
+.page1-ar.is-page1-active > .page1-module-title { display: flex; }
+.page1-ar[data-app-state="MODULE_ACTIVE"] > .project-title,
+.page1-ar[data-app-state="MODULE_ACTIVE"] > .ar-waiting-screen { display: none !important; }
+
+.page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page1-module-title,
+.page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page2-ui,
+.page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page3-ui,
+.page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page2-scan-guide,
+.page1-ar:not([data-app-state="MODULE_ACTIVE"]) > .page2-loading-status {
+  display: none !important;
+}
+
+.app-debug-panel {
+  z-index: 80;
+  top: auto;
+  bottom: max(12px, env(safe-area-inset-bottom));
 }
 
 @keyframes bamboo-snap-feedback {

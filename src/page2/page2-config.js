@@ -1,4 +1,5 @@
 import { assetUrl } from '../asset-url.js'
+import { SHARED_FOLDOUT_LAYOUT } from '../shared-foldout-layout.js'
 
 const page2Asset = (path) => assetUrl(`assets/page2/${path}`)
 
@@ -95,17 +96,16 @@ export const PAGE2_CONFIG = {
   layers,
   floorBase: {
     enabled: true,
-    widthUnit: 1,
-    depthUnit: 1.418918919,
+    texture: page2Asset('background/page2-bg-full-base.png'),
+    widthUnit: SHARED_FOLDOUT_LAYOUT.floor.width,
+    depthUnit: SHARED_FOLDOUT_LAYOUT.floor.depth,
     clearanceMm: 2,
-    clearanceUnit: 0.013513514,
-    initialClearanceUnit: 1 / 148,
+    clearanceUnit: SHARED_FOLDOUT_LAYOUT.floor.lift,
+    initialClearanceUnit: SHARED_FOLDOUT_LAYOUT.floor.lift,
     fadeDuration: 250,
-    color: '#180806',
-    opacity: 0.96,
-    roughness: 1,
-    metalness: 0,
-    renderOrder: -100,
+    color: '#ffffff',
+    opacity: 1,
+    renderOrder: SHARED_FOLDOUT_LAYOUT.floor.renderOrder,
   },
   rescanReplay: {
     enabled: true,
@@ -120,6 +120,7 @@ export const PAGE2_CONFIG = {
     filterBeta: 180,
   },
   assets: {
+    floor: page2Asset('background/page2-bg-full-base.png'),
     background: page2Asset('background/page2-bg-full.png'),
     title: page2Asset('title/page2-title-group.png'),
     introDragon: page2Asset('intro/page2-intro-dragon-line.png.png'),
@@ -155,12 +156,16 @@ export const PAGE2_CONFIG = {
     recoverDuration: 260,
   },
   background: {
-    width: 1.02,
-    height: 1.53,
-    hingePosition: { x: 0, y: (210 / 148) / 2, z: 0.004 },
-    startRotationX: 0,
-    openAngle: 78,
-    endRotationX: 78,
+    width: SHARED_FOLDOUT_LAYOUT.backgroundBoard.width,
+    height: SHARED_FOLDOUT_LAYOUT.backgroundBoard.height,
+    hingePosition: {
+      x: SHARED_FOLDOUT_LAYOUT.backboardHinge.position[0],
+      y: SHARED_FOLDOUT_LAYOUT.backboardHinge.position[1],
+      z: SHARED_FOLDOUT_LAYOUT.backboardHinge.position[2],
+    },
+    startRotationX: SHARED_FOLDOUT_LAYOUT.backboardHinge.rotationStartDegrees[0],
+    openAngle: SHARED_FOLDOUT_LAYOUT.backgroundFloorAngle,
+    endRotationX: SHARED_FOLDOUT_LAYOUT.backboardHinge.rotationEndDegrees[0],
     openDuration: 900,
     surfaceZ: 0,
     overviewBrightness: 1,

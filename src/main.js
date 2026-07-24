@@ -7,9 +7,11 @@ const params = new URLSearchParams(window.location.search)
 const preview = params.get('preview')
 const ar = params.get('ar')
 
-if (ar === 'page1' || ar === 'page2' || ar === 'page3') {
+document.title = '龙脉铜梁｜铜梁火龙非遗AR互动体验设计'
+
+if (!preview && (!ar || ar === 'page1' || ar === 'page2' || ar === 'page3')) {
   renderArPage1(app)
-} else if (!preview || preview === 'page1') {
+} else if (preview === 'page1') {
   renderPage1Preview(app)
 } else {
   app.innerHTML = `

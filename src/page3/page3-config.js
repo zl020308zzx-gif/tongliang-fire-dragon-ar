@@ -1,12 +1,10 @@
 import { assetUrl } from '../asset-url.js'
+import { SHARED_FOLDOUT_LAYOUT, cloneVector } from '../shared-foldout-layout.js'
 
 const page3Asset = (path) => assetUrl(`assets/page3/${path}`)
 const markerAspect = 1491 / 1055
 const canvasWidth = 1.02
 const canvasHeight = canvasWidth * 1.5
-const page2MarkerAspect = 210 / 148
-const page2FloorClearance = 2 / 148
-const floorWidthForOriginalRatio = page2MarkerAspect * (2 / 3)
 
 export const PAGE3_STATES = Object.freeze({
   HIDDEN: 'PAGE3_HIDDEN',
@@ -85,34 +83,34 @@ export const PAGE3_CONFIG = {
     height: canvasHeight,
     // Page3 的空间配置统一使用角度；写入 Three.js 时再转换为弧度。
     root: {
-      position: [0, 0, 0],
-      rotationDegrees: [0, 0, 0],
-      scale: [1, 1, 1],
+      position: cloneVector(SHARED_FOLDOUT_LAYOUT.rootPosition),
+      rotationDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.rootRotationDegrees),
+      scale: cloneVector(SHARED_FOLDOUT_LAYOUT.rootScale),
     },
     floor: {
-      width: floorWidthForOriginalRatio,
-      depth: page2MarkerAspect,
-      position: [0, 0, page2FloorClearance],
-      rotationDegrees: [0, 0, 0],
-      scale: [1, 1, 1],
-      renderOrder: -100,
+      width: SHARED_FOLDOUT_LAYOUT.floor.width,
+      depth: SHARED_FOLDOUT_LAYOUT.floor.depth,
+      position: cloneVector(SHARED_FOLDOUT_LAYOUT.floor.position),
+      rotationDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.floor.rotationDegrees),
+      scale: cloneVector(SHARED_FOLDOUT_LAYOUT.floor.scale),
+      renderOrder: SHARED_FOLDOUT_LAYOUT.floor.renderOrder,
     },
     backboardHinge: {
-      position: [0, page2MarkerAspect / 2, 0.004],
-      rotationStartDegrees: [0, 0, 0],
-      rotationEndDegrees: [90, 0, 0],
-      scale: [1, 1, 1],
+      position: cloneVector(SHARED_FOLDOUT_LAYOUT.backboardHinge.position),
+      rotationStartDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.backboardHinge.rotationStartDegrees),
+      rotationEndDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.backboardHinge.rotationEndDegrees),
+      scale: cloneVector(SHARED_FOLDOUT_LAYOUT.backboardHinge.scale),
     },
     backgroundBoard: {
-      width: canvasWidth,
-      height: canvasHeight,
-      position: [0, canvasHeight / 2, 0],
-      rotationDegrees: [0, 0, 0],
-      scale: [1, 1, 1],
+      width: SHARED_FOLDOUT_LAYOUT.backgroundBoard.width,
+      height: SHARED_FOLDOUT_LAYOUT.backgroundBoard.height,
+      position: cloneVector(SHARED_FOLDOUT_LAYOUT.backgroundBoard.localPosition),
+      rotationDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.backgroundBoard.rotationDegrees),
+      scale: cloneVector(SHARED_FOLDOUT_LAYOUT.backgroundBoard.scale),
       renderOrder: 300,
     },
     stageRoot: {
-      position: [0, page2MarkerAspect / 2 - 0.11, canvasHeight / 2],
+      position: [0, SHARED_FOLDOUT_LAYOUT.markerAspect / 2 - 0.11, canvasHeight / 2],
       rotationDegrees: [90, 0, 0],
       scale: [1, 1, 1],
     },

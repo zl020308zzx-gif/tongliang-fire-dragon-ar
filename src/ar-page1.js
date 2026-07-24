@@ -23,6 +23,13 @@ export const AR_PAGE1_STATES = Object.freeze({
   TRACKING_PAUSED: 'TRACKING_PAUSED',
 })
 
+export const APP_AR_STATES = Object.freeze({
+  LANDING: 'APP_LANDING',
+  CAMERA_REQUESTING: 'CAMERA_REQUESTING',
+  WAITING_FOR_TARGET: 'AR_WAITING_FOR_TARGET',
+  MODULE_ACTIVE: 'MODULE_ACTIVE',
+})
+
 const vector = (values) => values.join(' ')
 
 const imageEntity = (assetId, entityConfig, extra = '') => `
@@ -106,24 +113,6 @@ export function renderArPage1(root) {
     console.error('[page3] Scene markup disabled; existing pages remain available.', error)
   }
 
-  const entryCopy = page3Entry
-    ? {
-        label: '《龙脉铜梁》',
-        title: '——铜梁火龙非遗AR互动体验设计',
-        description: '开启摄像头后，请扫描第三页《火舞夜空》识别图。',
-      }
-    : page2Entry
-      ? {
-          label: '《龙脉铜梁》',
-          title: '——铜梁火龙非遗AR互动体验设计',
-          description: '开启摄像头后，请缓慢平放第二页识别图。',
-        }
-      : {
-          label: '铜梁火龙 · 第一页',
-          title: '扫描识别卡，唤醒竹骨成龙工艺',
-          description: '需要使用摄像头识别竹骨燃龙卡片。',
-        }
-
   let legacyStorageCleaned = false
   try {
     config.legacyStorageKeys.forEach((key) => localStorage.removeItem(key))
@@ -134,9 +123,12 @@ export function renderArPage1(root) {
   }
 
   root.innerHTML = `
-    <main class="page1-preview page1-ar${page2Entry ? ' is-page2-route' : ''}${page3Entry ? ' is-page3-route' : ''}" style="--color-mask-url: url('${config.assets.colorMask}')">
+    <main class="page1-preview page1-ar${page2Entry ? ' is-page2-route' : ''}${page3Entry ? ' is-page3-route' : ''}"
+      data-app-state="${APP_AR_STATES.LANDING}" data-active-target="-1"
+      style="--color-mask-url: url('${config.assets.colorMask}')">
       <div class="ar-runtime-assets" hidden>
         <img id="craft-panel-asset" src="${config.assets.backgroundBoard}" alt="" draggable="false" />
+        <img id="page1-floor-asset" src="${config.assets.floorBase}" alt="" draggable="false" crossorigin="anonymous" />
         <img id="badge-bamboo" src="${config.assets.badge}" alt="" draggable="false" />
         ${config.assets.craftLayers.map((layer) => `<img id="explode-${layer.id}" src="${layer.path}" alt="" draggable="false" />`).join('')}
         <video id="dragon-video" src="${config.assets.awakenVideo}" playsinline webkit-playsinline preload="none"></video>
@@ -160,6 +152,12 @@ export function renderArPage1(root) {
         </a-entity>
 
         <a-entity id="stableAnchor" visible="false">
+          <a-image id="page1-floor-base" src="#page1-floor-asset"
+            width="${config.ar.floor.width}" height="${config.ar.floor.height}"
+            position="${vector(config.ar.floor.position)}" rotation="${vector(config.ar.floor.rotation)}"
+            scale="${vector(config.ar.floor.scale)}" data-render-order="${config.ar.floor.renderOrder}"
+            material="shader: flat; transparent: true; alphaTest: 0.005; opacity: ${config.ar.floor.opacity}; depthWrite: true; depthTest: true; side: double"
+            visible="true"></a-image>
           <a-entity id="panelHinge" position="${vector(panelHingePosition)}"
             rotation="${vector(panelStartRotation)}" visible="false">
             <a-entity id="panelContent" position="${vector(panelContentPosition)}"
@@ -200,7 +198,11 @@ export function renderArPage1(root) {
         ${page3Scene}
       </a-scene>
 
-      <header class="page-title"><span>01</span><h1>竹骨成龙</h1></header>
+      <header class="project-title" aria-label="项目标题">
+        <strong>龙脉铜梁</strong>
+        <span>铜梁火龙非遗AR互动体验设计</span>
+      </header>
+      <header class="page-title page1-module-title"><span>01</span><h1>竹骨成龙</h1></header>
       <div class="craft-stamps" aria-label="工艺进度印记">
         ${config.craftStamps.labels.map((label, index) => `<span data-craft-stamp="${index}" class="${index === 0 ? 'is-current' : ''}">${label}</span>`).join('')}
       </div>
@@ -243,12 +245,36 @@ export function renderArPage1(root) {
       </section>
 
       <section class="ar-start-screen ar-overlay-card">
-        <span>${entryCopy.label}</span>
-        <h2>${entryCopy.title}</h2>
-        <p>${entryCopy.description}</p>
+        <span>《龙脉铜梁》</span>
+        <h2>——铜梁火龙非遗AR互动体验设计</h2>
+        <p>开启摄像头后，请扫描识别卡。</p>
         <button type="button" data-ar-action="start">开启AR体验</button>
       </section>
-      <p class="ar-scan-status" role="status" hidden>请扫描竹骨燃龙识别卡</p>
+      <section class="ar-waiting-screen" role="status" hidden>
+        <strong>请扫描识别卡</strong>
+        <small>扫描成功后请保持手机与识别卡垂直，以获得更好的体验</small>
+      </section>
+      <p class="ar-scan-status" role="status" hidden></p>
+      ${params.get('debug') === '1' ? `<aside class="debug-panel app-debug-panel">
+        <p>appState <strong data-app-debug-state>${APP_AR_STATES.LANDING}</strong></p>
+        <p>activeTargetIndex <strong data-app-debug-target>-1</strong></p>
+        <p>activeModule <strong data-app-debug-module>—</strong></p>
+        <p>cameraPermissionGranted <strong data-app-debug-camera>false</strong></p>
+        <p>waitingScanUIVisible <strong data-app-debug-waiting>false</strong></p>
+        <p>page1FloorTextureReady <strong data-app-debug-page1-floor>false</strong></p>
+        <p>page1FloorMounted <strong data-app-debug-page1-mounted>false</strong></p>
+        <p>page1FloorVisible <strong data-app-debug-page1-visible>false</strong></p>
+        <p>page1FloorWorldPosition <strong data-app-debug-page1-position>—</strong></p>
+        <p>page1FloorRotation <strong data-app-debug-page1-rotation>—</strong></p>
+        <p>page1BoardFloorAngle <strong data-app-debug-page1-angle>—</strong></p>
+        <p>page2FloorTextureReady <strong data-app-debug-page2-floor>false</strong></p>
+        <p>page2FloorMounted <strong data-app-debug-page2-mounted>false</strong></p>
+        <p>page2FloorVisible <strong data-app-debug-page2-visible>false</strong></p>
+        <p>page2FloorWorldPosition <strong data-app-debug-page2-position>—</strong></p>
+        <p>page2FloorRotation <strong data-app-debug-page2-rotation>—</strong></p>
+        <p>page2BoardFloorAngle <strong data-app-debug-page2-angle>—</strong></p>
+        <p>page3BoardFloorAngle <strong data-app-debug-page3-angle>—</strong></p>
+      </aside>` : ''}
       <section class="ar-lost-dialog ar-overlay-card" role="dialog" hidden>
         <h2>识别卡已离开画面</h2>
         <p>当前制作进度已保存，请重新对准识别卡。</p>
@@ -273,6 +299,9 @@ export function renderArPage1(root) {
   const page3Anchor = root.querySelector('#page3-anchor')
   const page3Preloader = page3Entry ? createPage3Preloader({ root, config: PAGE3_CONFIG, debug: page3Debug }) : null
   const stableAnchor = root.querySelector('#stableAnchor')
+  const preview = root.querySelector('.page1-ar')
+  const page1FloorImage = root.querySelector('#page1-floor-asset')
+  const page1Floor = root.querySelector('#page1-floor-base')
   const panelHinge = root.querySelector('#panelHinge')
   const panelContent = root.querySelector('#panelContent')
   const craftPanel = root.querySelector('#craft-panel-surface')
@@ -295,6 +324,14 @@ export function renderArPage1(root) {
   let cameraStartRequested = false
   let cameraStartPromise = null
   let cameraStarted = false
+  let cameraPermissionGranted = false
+  let appState = APP_AR_STATES.LANDING
+  let activeTargetIndex = -1
+  let page1FloorReady = false
+  let page1FloorReadyPromise = null
+  let page1ActivationId = 0
+  let appDebugTimer = null
+  const angleWarnings = new Set()
   let markerAspect = aspect
   let bambooClicked = false
   let panelReady = false
@@ -310,6 +347,176 @@ export function renderArPage1(root) {
       initialPanelMode.endRotation.z,
     ],
   }
+
+  const setAppState = (nextState, targetIndex = activeTargetIndex) => {
+    appState = nextState
+    activeTargetIndex = nextState === APP_AR_STATES.MODULE_ACTIVE ? targetIndex : -1
+    preview.dataset.appState = nextState
+    preview.dataset.activeTarget = String(activeTargetIndex)
+    preview.classList.toggle('is-page1-active', activeTargetIndex === 0)
+    preview.classList.toggle('is-page2-active', activeTargetIndex === 1)
+    preview.classList.toggle('is-page3-active', activeTargetIndex === 2)
+    root.querySelector('[data-app-debug-state]')?.replaceChildren(nextState)
+    root.querySelector('[data-app-debug-target]')?.replaceChildren(String(activeTargetIndex))
+  }
+
+  const waitFrames = async (count = 2) => {
+    for (let index = 0; index < count; index += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    }
+  }
+
+  const ensurePage1FloorReady = () => {
+    if (page1FloorReady) return Promise.resolve(true)
+    if (page1FloorReadyPromise) return page1FloorReadyPromise
+    page1FloorReadyPromise = (async () => {
+      if (!page1FloorImage.complete || page1FloorImage.naturalWidth <= 0 || page1FloorImage.naturalHeight <= 0) {
+        await new Promise((resolve, reject) => {
+          const onLoad = () => { cleanup(); resolve() }
+          const onError = () => { cleanup(); reject(new Error(`[page1] Image load failed: ${config.assets.floorBase}`)) }
+          const cleanup = () => {
+            page1FloorImage.removeEventListener('load', onLoad)
+            page1FloorImage.removeEventListener('error', onError)
+          }
+          page1FloorImage.addEventListener('load', onLoad, { once: true })
+          page1FloorImage.addEventListener('error', onError, { once: true })
+        })
+      }
+      if (typeof page1FloorImage.decode === 'function') {
+        try {
+          await page1FloorImage.decode()
+        } catch (error) {
+          if (page1FloorImage.naturalWidth <= 0 || page1FloorImage.naturalHeight <= 0) throw error
+        }
+      }
+      if (page1FloorImage.naturalWidth <= 0 || page1FloorImage.naturalHeight <= 0) {
+        throw new Error(`[page1] Invalid floor image dimensions: ${config.assets.floorBase}`)
+      }
+      if (!scene.hasLoaded) await new Promise((resolve) => scene.addEventListener('loaded', resolve, { once: true }))
+      page1Floor.setAttribute('src', '#page1-floor-asset')
+      page1Floor.setAttribute('visible', true)
+      page1Floor.object3D.visible = true
+      let textures = []
+      for (let attempt = 0; attempt < 6 && textures.length === 0; attempt += 1) {
+        await waitFrames(1)
+        textures = []
+        page1Floor.object3D.traverse((object) => {
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          materials.filter(Boolean).forEach((material) => {
+            if (material.map) textures.push(material.map)
+          })
+        })
+      }
+      if (textures.length === 0) throw new Error(`[page1] Three.js texture not created: ${config.assets.floorBase}`)
+      textures.forEach((texture) => {
+        texture.needsUpdate = true
+        try { scene.renderer?.initTexture?.(texture) } catch { texture.needsUpdate = true }
+      })
+      await waitFrames(config.ar.floor.readyRenderFrames)
+      page1FloorReady = true
+      root.querySelector('[data-app-debug-page1-floor]')?.replaceChildren('true')
+      return true
+    })().catch((error) => {
+      page1FloorReadyPromise = null
+      console.error('[page1] Floor readiness failed', {
+        path: config.assets.floorBase,
+        error: error?.message || String(error),
+      })
+      return false
+    })
+    return page1FloorReadyPromise
+  }
+
+  const updateAppDebug = () => {
+    if (params.get('debug') !== '1') return
+    const THREE = window.AFRAME?.THREE
+    const page2State = page2Controller?.getState?.()
+    const page3State = page3Controller?.getState?.()
+    const page2FloorReady = page2State?.floorBase?.textureReady ?? false
+    const page3FloorReady = page3State?.foundation?.floorTextureReady ?? false
+    const waitingVisible = !root.querySelector('.ar-waiting-screen')?.hidden
+      && getComputedStyle(root.querySelector('.ar-waiting-screen')).display !== 'none'
+    const moduleNames = { 0: '01 竹骨成龙', 1: '02 龙脉探源', 2: '03 火舞夜空' }
+    const formatVector = (values) => values?.every(Number.isFinite)
+      ? values.map((value) => value.toFixed(3)).join(', ')
+      : '—'
+    const inspectEntity = (floorEntity, boardEntity, anchorId) => {
+      if (!THREE || !floorEntity?.object3D || !boardEntity?.object3D) {
+        return { mounted: false, visible: false, position: null, rotation: null, angle: null }
+      }
+      const position = new THREE.Vector3()
+      floorEntity.object3D.getWorldPosition(position)
+      const rotation = floorEntity.object3D.rotation
+      const mounted = Boolean(floorEntity.closest(`#${anchorId}`))
+      let node = floorEntity
+      let visible = true
+      while (node && node !== root) {
+        if (node.object3D?.visible === false || node.getAttribute?.('visible') === false) visible = false
+        node = node.parentElement
+      }
+      const floorNormal = new THREE.Vector3(0, 0, 1)
+      const boardNormal = new THREE.Vector3(0, 0, 1)
+      floorNormal.applyQuaternion(floorEntity.object3D.getWorldQuaternion(new THREE.Quaternion())).normalize()
+      boardNormal.applyQuaternion(boardEntity.object3D.getWorldQuaternion(new THREE.Quaternion())).normalize()
+      const angle = THREE.MathUtils.radToDeg(floorNormal.angleTo(boardNormal))
+      return {
+        mounted,
+        visible,
+        position: position.toArray(),
+        rotation: [rotation.x, rotation.y, rotation.z].map(THREE.MathUtils.radToDeg),
+        angle: Number.isFinite(angle) ? angle : null,
+      }
+    }
+    const page1Info = inspectEntity(page1Floor, craftPanel, 'stableAnchor')
+    const page2Info = inspectEntity(
+      root.querySelector('#page2-floor-base'),
+      root.querySelector('#page2-background-plane'),
+      'page2-anchor',
+    )
+    const page3Info = inspectEntity(
+      root.querySelector('#page3-floor-plane'),
+      root.querySelector('#page3-background-plane'),
+      'page3-anchor',
+    )
+    const angleLabel = (value) => Number.isFinite(value) ? `${value.toFixed(1)}°` : '—'
+    ;[
+      ['page1', 0, page1Info, panelReady],
+      ['page2', 1, page2Info, ['PAGE2_OVERVIEW', 'PAGE2_MODEL', 'PAGE2_COMPLETE'].includes(page2State?.state)],
+      ['page3', 2, page3Info, !['PAGE3_HIDDEN', 'PAGE3_LOADING'].includes(page3State?.state)],
+    ].forEach(([name, targetIndex, info, settled]) => {
+      const invalidTransform = [...(info.position || []), ...(info.rotation || [])].some((value) => !Number.isFinite(value))
+      if (invalidTransform && !angleWarnings.has(`${name}-transform`)) {
+        angleWarnings.add(`${name}-transform`)
+        console.warn(`[${name}] Floor transform contains NaN/invalid values`, info)
+      }
+      if (settled && appState === APP_AR_STATES.MODULE_ACTIVE && activeTargetIndex === targetIndex
+        && Number.isFinite(info.angle) && (info.angle < 80 || info.angle > 100) && !angleWarnings.has(name)) {
+        angleWarnings.add(name)
+        console.warn(`[${name}] Background/floor angle outside 80°–100°`, info.angle)
+      }
+    })
+    root.querySelector('[data-app-debug-camera]')?.replaceChildren(String(cameraPermissionGranted))
+    root.querySelector('[data-app-debug-waiting]')?.replaceChildren(String(waitingVisible))
+    root.querySelector('[data-app-debug-module]')?.replaceChildren(moduleNames[activeTargetIndex] || '—')
+    root.querySelector('[data-app-debug-page1-floor]')?.replaceChildren(String(page1FloorReady))
+    root.querySelector('[data-app-debug-page1-mounted]')?.replaceChildren(String(page1Info.mounted))
+    root.querySelector('[data-app-debug-page1-visible]')?.replaceChildren(String(page1Info.visible))
+    root.querySelector('[data-app-debug-page1-position]')?.replaceChildren(formatVector(page1Info.position))
+    root.querySelector('[data-app-debug-page1-rotation]')?.replaceChildren(formatVector(page1Info.rotation))
+    root.querySelector('[data-app-debug-page1-angle]')?.replaceChildren(angleLabel(page1Info.angle))
+    root.querySelector('[data-app-debug-page2-floor]')?.replaceChildren(String(page2FloorReady))
+    root.querySelector('[data-app-debug-page2-mounted]')?.replaceChildren(String(page2Info.mounted))
+    root.querySelector('[data-app-debug-page2-visible]')?.replaceChildren(String(page2Info.visible))
+    root.querySelector('[data-app-debug-page2-position]')?.replaceChildren(formatVector(page2Info.position))
+    root.querySelector('[data-app-debug-page2-rotation]')?.replaceChildren(formatVector(page2Info.rotation))
+    root.querySelector('[data-app-debug-page2-angle]')?.replaceChildren(angleLabel(page2Info.angle))
+    root.querySelector('[data-app-debug-page3-angle]')?.replaceChildren(
+      `${angleLabel(page3Info.angle)} / floorReady ${page3FloorReady}`,
+    )
+  }
+
+  ensurePage1FloorReady()
+  if (params.get('debug') === '1') appDebugTimer = window.setInterval(updateAppDebug, 500)
 
   if (!scene.hasLoaded && startActionButton) {
     startActionButton.disabled = true
@@ -509,12 +716,13 @@ export function renderArPage1(root) {
     'restart-camera': () => startAr(true),
     'continue-current': () => {
       ui.hideLost()
-      ui.showScanning('请重新对准竹骨燃龙识别卡')
+      ui.showModuleScanning('请重新对准第一页识别卡')
       if (lifecycle?.isTracked()) resumeTrackedExperience()
     },
     'return-scan': () => {
       ui.hideLost()
       setArState(AR_PAGE1_STATES.AR_SCANNING)
+      setAppState(APP_AR_STATES.WAITING_FOR_TARGET)
       ui.showScanning()
     },
     'continue-video': () => {
@@ -528,11 +736,6 @@ export function renderArPage1(root) {
     root,
     signal,
     actions,
-    scanMessage: page3Entry
-      ? '请扫描《火舞夜空》第三页识别卡'
-      : page2Entry
-        ? '请扫描《龙脉探源》第二页识别卡'
-        : '请扫描竹骨燃龙识别卡',
   })
 
   const pageCleanup = initializePage1Controller({
@@ -620,6 +823,7 @@ export function renderArPage1(root) {
       ui.showHotspot()
     } else {
       setArState(AR_PAGE1_STATES.AR_SCANNING)
+      setAppState(APP_AR_STATES.WAITING_FOR_TARGET)
       ui.showScanning()
     }
     updateStorageDebug()
@@ -720,6 +924,8 @@ export function renderArPage1(root) {
           debug: page2Debug,
           preloader: page2Preloader,
           onActivate() {
+            setAppState(APP_AR_STATES.MODULE_ACTIVE, 1)
+            ui.showModule()
             page3Controller?.suspendForOtherTarget()
             stableAnchorController?.setTracked(false)
             setEntityVisible(stableAnchor, false)
@@ -751,6 +957,8 @@ export function renderArPage1(root) {
           debug: page3Debug,
           preloader: page3Preloader,
           onActivate() {
+            setAppState(APP_AR_STATES.MODULE_ACTIVE, 2)
+            ui.showModule()
             page2Controller?.suspendForOtherTarget()
             stableAnchorController?.setTracked(false)
             setEntityVisible(stableAnchor, false)
@@ -777,33 +985,40 @@ export function renderArPage1(root) {
       lostDelayMs: config.ar.tracking.lostDelayMs,
       signal,
       onFound() {
+        const activationId = ++page1ActivationId
         page2Controller?.suspendForOtherTarget()
         page3Controller?.suspendForOtherTarget()
         stableAnchorController.setTracked(true)
         hotspot.setTracked(true)
         panelController.resume()
         ui.hideLost()
-        setArState(AR_PAGE1_STATES.TARGET_FOUND)
-        if (craftStarted) resumeTrackedExperience()
-        else if (resumeArState === AR_PAGE1_STATES.PANEL_RISING) {
-          setArState(AR_PAGE1_STATES.PANEL_RISING)
-          ui.showPanelRising()
-          panelHinge.object3D.visible = true
-          panelHinge.setAttribute('visible', true)
-          panelController.resume()
-        } else if (resumeArState === AR_PAGE1_STATES.WAIT_TILT) {
-          beginLiftGuide()
-        } else if (bambooClicked) {
-          panelController.configure(panelConfig.modes.vertical, markerAspect)
-          beginPanelRise()
-        }
-        else {
-          setArState(AR_PAGE1_STATES.WAIT_BAMBOO)
-          hotspot.setEnabled(true)
-          ui.showHotspot()
-        }
+        ensurePage1FloorReady().then(() => {
+          if (activationId !== page1ActivationId || !lifecycle?.isTracked()) return
+          setAppState(APP_AR_STATES.MODULE_ACTIVE, 0)
+          ui.showModule()
+          setArState(AR_PAGE1_STATES.TARGET_FOUND)
+          if (craftStarted) resumeTrackedExperience()
+          else if (resumeArState === AR_PAGE1_STATES.PANEL_RISING) {
+            setArState(AR_PAGE1_STATES.PANEL_RISING)
+            ui.showPanelRising()
+            panelHinge.object3D.visible = true
+            panelHinge.setAttribute('visible', true)
+            panelController.resume()
+          } else if (resumeArState === AR_PAGE1_STATES.WAIT_TILT) {
+            beginLiftGuide()
+          } else if (bambooClicked) {
+            panelController.configure(panelConfig.modes.vertical, markerAspect)
+            beginPanelRise()
+          }
+          else {
+            setArState(AR_PAGE1_STATES.WAIT_BAMBOO)
+            hotspot.setEnabled(true)
+            ui.showHotspot()
+          }
+        })
       },
       onLost() {
+        page1ActivationId += 1
         resumeArState = arState
         stableAnchorController.setTracked(false)
         hotspot.setTracked(false)
@@ -849,13 +1064,14 @@ export function renderArPage1(root) {
       }
       const system = scene.systems['mindar-image-system']
       if (!system?.start) throw new Error('MindAR系统未加载')
+      setupArControllers()
       await system.start()
       cameraStarted = true
+      cameraPermissionGranted = true
       const cameraStartedAt = performance.now()
       page2Preloader?.markTiming?.('cameraStarted', null, cameraStartedAt)
       page2Controller?.notifyCameraStarted?.(cameraStartedAt)
       await waitForCameraFrame(system)
-      setupArControllers()
       page2Controller?.startAssetLoading()
       page2Controller?.notifyCameraStarted?.(cameraStartedAt)
       if (page3Entry) page3Controller?.startAssetLoading()
@@ -870,13 +1086,16 @@ export function renderArPage1(root) {
 
   const startAr = async () => {
     setArState(AR_PAGE1_STATES.AR_STARTING)
+    setAppState(APP_AR_STATES.CAMERA_REQUESTING)
     ui.showStarting()
     try {
       await requestCameraStart()
       setArState(AR_PAGE1_STATES.AR_SCANNING)
+      setAppState(APP_AR_STATES.WAITING_FOR_TARGET)
       ui.showScanning()
     } catch (error) {
       setArState(AR_PAGE1_STATES.AR_NOT_STARTED)
+      setAppState(APP_AR_STATES.LANDING)
       ui.showError(`AR启动失败：${error?.message || '无法访问摄像头'}`)
     }
   }
@@ -885,7 +1104,7 @@ export function renderArPage1(root) {
     'arReady',
     () => {
       arReady = true
-      if (!lifecycle?.isTracked()) ui.showScanning()
+      if (appState !== APP_AR_STATES.MODULE_ACTIVE && !lifecycle?.isTracked()) ui.showScanning()
       updateTrackingDebug()
     },
     { signal },
@@ -915,6 +1134,7 @@ export function renderArPage1(root) {
     hotspot?.destroy()
     panelController?.destroy()
     window.clearTimeout(liftGuideTimer)
+    window.clearInterval(appDebugTimer)
     stableAnchorController?.destroy()
     lifecycle?.destroy()
     page2Controller?.destroy()

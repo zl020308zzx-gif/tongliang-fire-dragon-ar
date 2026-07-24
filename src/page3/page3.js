@@ -1667,6 +1667,7 @@ export function createPage3Experience({
       }
       root.querySelector('.page1-ar')?.classList.remove('is-page2-active')
       root.querySelector('.page1-ar')?.classList.add('is-page3-active')
+      onActivate?.()
       ui.hidden = false
       preloaderSession.loadCritical().then(() => {
         placeDebugAnchor()
@@ -1729,7 +1730,18 @@ export function createPage3Experience({
       lostNotice.hidden = true
       if (![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) setVisible(anchor, false)
     },
-    getState: () => ({ state, tracked, suspended, drumEnabled, drumHitCount, criticalReady, deferredSettled, fps }),
+    getState: () => ({
+      state,
+      tracked,
+      suspended,
+      drumEnabled,
+      drumHitCount,
+      criticalReady,
+      deferredSettled,
+      fps,
+      foundation: getFoundationDiagnostics(),
+      backgroundFloorAngle: config.layout.backboardHinge.rotationEndDegrees[0],
+    }),
     destroy() {
       destroyed = true
       abortController.abort()

@@ -1,6 +1,7 @@
-export function createArUiController({ root, signal, actions, scanMessage = '请扫描竹骨燃龙识别卡' }) {
+export function createArUiController({ root, signal, actions }) {
   const preview = root.querySelector('.page1-preview')
   const startScreen = root.querySelector('.ar-start-screen')
+  const waitingScreen = root.querySelector('.ar-waiting-screen')
   const startButton = root.querySelector('[data-ar-action="start"]')
   const scanStatus = root.querySelector('.ar-scan-status')
   const lostDialog = root.querySelector('.ar-lost-dialog')
@@ -15,6 +16,7 @@ export function createArUiController({ root, signal, actions, scanMessage = '请
   const hideTransient = () => {
     scanStatus.classList.remove('is-confirmed')
     scanStatus.hidden = true
+    waitingScreen.hidden = true
     lostDialog.hidden = true
     videoResume.hidden = true
     errorPanel.hidden = true
@@ -25,14 +27,22 @@ export function createArUiController({ root, signal, actions, scanMessage = '请
     showStarting() {
       startButton.disabled = true
       startButton.textContent = '正在开启摄像头…'
-      scanStatus.textContent = '正在请求摄像头权限…'
-      scanStatus.hidden = false
+      waitingScreen.hidden = true
     },
-    showScanning(message = scanMessage) {
+    showScanning() {
+      startScreen.hidden = true
+      hideTransient()
+      waitingScreen.hidden = false
+    },
+    showModuleScanning(message) {
       startScreen.hidden = true
       hideTransient()
       scanStatus.textContent = message
       scanStatus.hidden = false
+    },
+    showModule() {
+      startScreen.hidden = true
+      hideTransient()
     },
     showHotspot() {
       startScreen.hidden = true
@@ -81,6 +91,7 @@ export function createArUiController({ root, signal, actions, scanMessage = '请
     resetStart() {
       hideTransient()
       startScreen.hidden = false
+      waitingScreen.hidden = true
       startButton.disabled = false
       startButton.textContent = '开启AR体验'
     },
