@@ -523,6 +523,16 @@ export function createPage2Model({
       hotspotEntities.get(id).dataset.viewed = 'true'
       updateHotspotAppearance()
     },
+    resetViewed() {
+      hotspotEntities.forEach((entity) => {
+        entity.dataset.viewed = 'false'
+        entity.object3D.scale.setScalar(1)
+      })
+      selectedHotspotId = null
+      selectedScreenPoint = null
+      celebrationElapsed = -1
+      updateHotspotAppearance()
+    },
     closeSelection() {
       selectedHotspotId = null
       selectedScreenPoint = null

@@ -1357,8 +1357,12 @@ export function createPage2Experience({
     onTrackingFound?.()
     syncEntryUi()
     stable.setTracked(true)
-    startAssetLoading()
-    if (!preloadSession.getSnapshot().criticalReady) {
+    const preloadSnapshot = preloadSession.getSnapshot()
+    const criticalLoad = preloadSnapshot.criticalFailed
+      ? retryCriticalAssets()
+      : startAssetLoading()
+    criticalLoad.catch((error) => showError(error.message))
+    if (!preloadSnapshot.criticalReady) {
       preloadSession.setPhaseMessage?.('识别成功，正在展开龙脉图景')
     }
     setHtmlVisible(lostNotice, false)
@@ -1796,8 +1800,12 @@ export function createPage2Experience({
       stable.setTracked(false)
       cancelScheduledModelPreload()
       model.hide()
+      model.resetView()
+      model.resetViewed()
       particles.hide()
-      releasePage2Assets()
+      progress.reset()
+      updateCompleteButton()
+      completeButton.classList.remove('is-ready')
       setState(PAGE2_STATES.HIDDEN)
       resetPage2EntranceVisualState()
       page2Runtime.pendingEnter = false
@@ -1844,6 +1852,7 @@ export function createPage2Experience({
       bindingQueue.splice(0)
       pendingAnimationFrames.forEach((id) => cancelAnimationFrame(id))
       pendingAnimationFrames.clear()
+      releasePage2Assets()
       lifecycle?.destroy()
       stable.destroy()
       overview.destroy()

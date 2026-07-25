@@ -192,6 +192,7 @@ export function createSharedModuleUi({ root, signal }) {
   let hideTimer = 0
   let completionRequested = false
   let loaderHiddenAt = 0
+  let activeTargetIndex = -1
   const loaderShowCounts = { 0: 0, 1: 0, 2: 0 }
   const loaderHideCounts = { 0: 0, 1: 0, 2: 0 }
   let loaderState = {
@@ -242,10 +243,30 @@ export function createSharedModuleUi({ root, signal }) {
     })
   }
 
+  const resetLoaderState = (targetIndex = -1) => {
+    window.clearTimeout(hideTimer)
+    loading.classList.remove('is-complete')
+    loading.hidden = true
+    retry.hidden = true
+    retryAction = null
+    completionRequested = false
+    loaderState = {
+      targetIndex,
+      title: '',
+      progress: 0,
+      stage: 'idle',
+      currentPath: '',
+      failed: false,
+      trackingLost: false,
+    }
+  }
+
   return {
     activate(targetIndex) {
       const copy = MODULE_COPY[targetIndex]
       if (!copy) return
+      if (activeTargetIndex !== targetIndex) resetLoaderState(targetIndex)
+      activeTargetIndex = targetIndex
       number.textContent = copy.number
       title.textContent = copy.title
       header.hidden = false
@@ -254,23 +275,25 @@ export function createSharedModuleUi({ root, signal }) {
       checkDuplicateHeaders()
     },
     deactivate() {
+      activeTargetIndex = -1
       header.hidden = true
       bottomHint.hidden = true
       lost.hidden = true
-      window.clearTimeout(hideTimer)
-      loading.classList.remove('is-complete')
-      loading.hidden = true
-      completionRequested = false
+      resetLoaderState()
     },
-    showLost() {
+    showLost(targetIndex = activeTargetIndex) {
+      if (targetIndex !== activeTargetIndex) return false
       loaderState.trackingLost = true
       if (!loading.hidden) renderLoader()
       else lost.hidden = false
+      return true
     },
-    hideLost() {
+    hideLost(targetIndex = activeTargetIndex) {
+      if (targetIndex !== activeTargetIndex) return false
       loaderState.trackingLost = false
       lost.hidden = true
       if (!loading.hidden) renderLoader()
+      return true
     },
     showLoading(targetIndexOrState, progress = 0, failed = false, onRetry = null) {
       const next = typeof targetIndexOrState === 'object'
@@ -282,6 +305,7 @@ export function createSharedModuleUi({ root, signal }) {
             onRetry,
           }
       const nextTargetIndex = next.targetIndex ?? loaderState.targetIndex
+      if (activeTargetIndex >= 0 && nextTargetIndex !== activeTargetIndex) return false
       const countsAsShow = loading.hidden || loaderState.targetIndex !== nextTargetIndex
       window.clearTimeout(hideTimer)
       completionRequested = false
@@ -302,6 +326,7 @@ export function createSharedModuleUi({ root, signal }) {
       if (countsAsShow && Object.prototype.hasOwnProperty.call(loaderShowCounts, nextTargetIndex)) {
         loaderShowCounts[nextTargetIndex] += 1
       }
+      return true
     },
     showError(targetIndex, failure = {}, onRetry = null) {
       this.showLoading({
@@ -313,8 +338,13 @@ export function createSharedModuleUi({ root, signal }) {
         onRetry,
       })
     },
-    completeLoading() {
-      if (loading.hidden || completionRequested) return false
+    completeLoading(targetIndex = loaderState.targetIndex) {
+      if (
+        targetIndex !== activeTargetIndex
+        || loaderState.targetIndex !== targetIndex
+        || loading.hidden
+        || completionRequested
+      ) return false
       completionRequested = true
       loaderState = {
         ...loaderState,
@@ -331,7 +361,8 @@ export function createSharedModuleUi({ root, signal }) {
         loading.classList.add('is-complete')
       })
       hideTimer = window.setTimeout(() => {
-        const completedTarget = loaderState.targetIndex
+        if (targetIndex !== activeTargetIndex || loaderState.targetIndex !== targetIndex) return
+        const completedTarget = targetIndex
         loading.hidden = true
         loading.classList.remove('is-complete')
         retryAction = null
@@ -344,20 +375,7 @@ export function createSharedModuleUi({ root, signal }) {
       return true
     },
     hideLoading() {
-      window.clearTimeout(hideTimer)
-      loading.hidden = true
-      loading.classList.remove('is-complete')
-      retry.hidden = true
-      retryAction = null
-      completionRequested = false
-      loaderState = {
-        ...loaderState,
-        progress: 0,
-        stage: 'idle',
-        currentPath: '',
-        failed: false,
-        trackingLost: false,
-      }
+      resetLoaderState(activeTargetIndex)
     },
     setModuleControlsVisible(visible) {
       bottomHint.hidden = !visible
@@ -372,6 +390,7 @@ export function createSharedModuleUi({ root, signal }) {
         activeLoadingPage: loading.hidden ? null : loaderState.targetIndex,
         loadingProgress: loaderState.progress,
         loaderHiddenAt,
+        activeTargetIndex,
         page2LoaderShowCount: loaderShowCounts[1],
         page2LoaderHideCount: loaderHideCounts[1],
         loaderShowCounts: { ...loaderShowCounts },

@@ -48,44 +48,23 @@ export const PAGE2_HOTSPOTS = [
 
 export function createPage2Progress(config, hotspots = PAGE2_HOTSPOTS) {
   const viewed = new Set()
-  try {
-    JSON.parse(localStorage.getItem(config.viewedKey) || '[]').forEach((id) => {
-      if (hotspots.some((item) => item.id === id)) viewed.add(id)
-    })
-  } catch {
-    // 隐私模式或旧数据损坏时从空进度继续。
-  }
-
-  const persist = () => {
-    try {
-      localStorage.setItem(config.viewedKey, JSON.stringify([...viewed]))
-    } catch {
-      // 存储失败不能阻塞探索。
-    }
-  }
+  let completed = false
 
   return {
     markViewed(id) {
       viewed.add(id)
-      persist()
       return viewed.size
     },
     isViewed: (id) => viewed.has(id),
     getViewed: () => [...viewed],
     getCount: () => viewed.size,
     markCompleted() {
-      try {
-        localStorage.setItem(config.completedKey, 'true')
-      } catch {
-        // 存储失败不能阻塞完成反馈。
-      }
+      completed = true
     },
-    isCompleted() {
-      try {
-        return localStorage.getItem(config.completedKey) === 'true'
-      } catch {
-        return false
-      }
+    isCompleted: () => completed,
+    reset() {
+      viewed.clear()
+      completed = false
     },
   }
 }

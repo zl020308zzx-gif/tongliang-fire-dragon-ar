@@ -4,6 +4,7 @@ export function createProgressManager(storageKey) {
     paper: 0,
     paint: 0,
   }
+  let completed = false
 
   const set = (key, value) => {
     progress[key] = Math.min(1, Math.max(progress[key], value))
@@ -28,25 +29,11 @@ export function createProgressManager(storageKey) {
     setExact,
     reset,
     clearCompletion() {
-      try {
-        localStorage.removeItem(storageKey)
-      } catch {
-        // 隐私模式禁用存储时仍允许完整体验。
-      }
+      completed = false
     },
     markCompleted() {
-      try {
-        localStorage.setItem(storageKey, 'true')
-      } catch {
-        // 存储失败不能阻塞完成状态。
-      }
+      completed = true
     },
-    isCompleted() {
-      try {
-        return localStorage.getItem(storageKey) === 'true'
-      } catch {
-        return false
-      }
-    },
+    isCompleted: () => completed,
   }
 }
