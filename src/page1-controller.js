@@ -92,6 +92,7 @@ export function initializePage1Controller({
   craftImageElements.set(config.assets.colorMask, root.querySelector('#page1-color-mask-asset'))
 
   const renderer = createCraftRenderer({
+    scene,
     canvas,
     plane: craftPlane,
     layers: config.assets.craftLayers,
