@@ -25,7 +25,10 @@ const collectConfiguredAssets = async () => {
   const add = (assetPath) => assets.add(normalizeAssetPath(assetPath))
 
   matches(page1, /\$\{PAGE1_DIRECTORY\}\/([^`'"]+)/g)
-    .forEach((file) => add(`assets/page1/images/page1/${file}`))
+    .forEach((file) => {
+      add(`assets/page1/images/page1/${file}`)
+      add(`assets/page1-mobile/images/page1/${file}`)
+    })
   matches(page1, /assetUrl\(['"]([^'"]+)['"]\)/g).forEach(add)
 
   matches(page2, /page2Asset\(['"]([^'"]+)['"]\)/g).forEach((file) => {

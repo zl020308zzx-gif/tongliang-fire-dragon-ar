@@ -1,6 +1,6 @@
 import { assetUrl } from '../asset-url.js'
 import { SHARED_FOLDOUT_LAYOUT } from '../shared-foldout-layout.js'
-import { IS_IOS_MOBILE, selectPageImageRoot } from '../platform-assets.js'
+import { IS_MOBILE_DEVICE, selectPageImageRoot } from '../platform-assets.js'
 
 const page2ImageRoot = selectPageImageRoot('page2', 'page2-mobile')
 const page2Asset = (path) => assetUrl(`assets/${page2ImageRoot}/${path}`)
@@ -82,7 +82,7 @@ const layers = layerKeys.map((key, layerIndex) => {
 })
 
 export const PAGE2_CONFIG = {
-  mobileAssets: IS_IOS_MOBILE,
+  mobileAssets: IS_MOBILE_DEVICE,
   targetIndex: 1,
   overviewStableDelay: 250,
   overviewSequence: {
@@ -99,7 +99,7 @@ export const PAGE2_CONFIG = {
   layers,
   floorBase: {
     enabled: true,
-    texture: page2Asset('background/page2-bg-full-base.png'),
+    texture: page2Asset('background/page2-bg-full-base.jpg'),
     widthUnit: SHARED_FOLDOUT_LAYOUT.floor.width,
     depthUnit: SHARED_FOLDOUT_LAYOUT.floor.depth,
     clearanceMm: 2,
@@ -123,8 +123,8 @@ export const PAGE2_CONFIG = {
     filterBeta: 180,
   },
   assets: {
-    floor: page2Asset('background/page2-bg-full-base.png'),
-    background: page2Asset('background/page2-bg-full.png'),
+    floor: page2Asset('background/page2-bg-full-base.jpg'),
+    background: page2Asset('background/page2-bg-full.jpg'),
     title: page2Asset('title/page2-title-group.png'),
     introDragon: page2Asset('intro/page2-intro-dragon-line.png.png'),
     introText: page2Asset('intro/page2-intro-text.png'),

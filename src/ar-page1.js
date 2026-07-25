@@ -726,11 +726,13 @@ export function renderArPage1(root) {
       build: typeof __BUILD_META__ === 'undefined' ? null : __BUILD_META__,
       baseUrl: import.meta.env.BASE_URL,
       activeRoute,
-      mobileAssets: activeTargetIndex === 1
-        ? Boolean(PAGE2_CONFIG.mobileAssets)
-        : activeTargetIndex === 2
-          ? Boolean(PAGE3_CONFIG.mobileAssets)
-          : false,
+      mobileAssets: activeTargetIndex === 0
+        ? Boolean(config.mobileAssets)
+        : activeTargetIndex === 1
+          ? Boolean(PAGE2_CONFIG.mobileAssets)
+          : activeTargetIndex === 2
+            ? Boolean(PAGE3_CONFIG.mobileAssets)
+            : false,
       criticalAssetPaths: activeTargetIndex === 0
         ? [
             config.assets.backgroundBoard,
