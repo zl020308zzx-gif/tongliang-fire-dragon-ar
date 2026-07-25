@@ -52,11 +52,17 @@ export const resolveActiveRoute = (search = window.location.search) => {
 
 const vector = (values) => values.join(' ')
 
-const imageEntity = (assetId, entityConfig, extra = '', bindSource = true) => `
+const imageEntity = (
+  assetId,
+  entityConfig,
+  extra = '',
+  bindSource = true,
+  depthWrite = true,
+) => `
   <a-image ${bindSource ? `src="#${assetId}"` : ''} position="${vector(entityConfig.position)}"
     rotation="${vector(entityConfig.rotation)}" width="${entityConfig.size.width}"
     height="${entityConfig.size.height}"
-    material="transparent: true; alphaTest: 0.01; depthWrite: true; depthTest: true; side: double; shader: flat" ${extra}></a-image>
+    material="transparent: true; alphaTest: 0.01; depthWrite: ${depthWrite}; depthTest: true; side: double; shader: flat" ${extra}></a-image>
 `
 
 const explodedGroup = (config, bindSource = true) => `
@@ -214,12 +220,12 @@ export function renderArPage1(root) {
                   )
                   .join('')}
               </a-entity>
-              ${imageEntity('craft-panel-asset', config.backgroundBoard, 'id="craft-panel-surface" data-render-order="0"', page1Entry)}
+              ${imageEntity('craft-panel-asset', config.backgroundBoard, 'id="craft-panel-surface" data-render-order="0"', page1Entry, false)}
               ${imageEntity('page1-title-asset', config.titleImage, 'id="page1-title-image" data-render-order="1" visible="false"', page1Entry)}
               <a-plane id="craft-plane" position="${vector(config.craftPlane.position)}"
                 rotation="${vector(config.craftPlane.rotation)}" width="${config.craftPlane.size.width}"
                 height="${config.craftPlane.size.height}"
-                material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; depthWrite: false; depthTest: true; side: double; shader: flat"
+                material="src: #${config.canvas.id}; transparent: true; alphaTest: 0.01; depthWrite: false; depthTest: false; side: double; shader: flat"
                 visible="false"></a-plane>
               <a-image id="bamboo-badge" position="${vector(config.badge.position)}"
                 rotation="${vector(config.badge.rotation)}" width="${config.badge.size.width}"

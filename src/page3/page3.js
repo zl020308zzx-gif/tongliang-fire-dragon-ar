@@ -1361,9 +1361,16 @@ export function createPage3Experience({
     syncEntryUi()
     firstVisualGatePromise = waitForFirstVisualFrame({
       sceneEl: scene,
-      entities: [background, floor, title, drumPlane],
-      isAnchorVisible: () => anchor?.object3D?.visible !== false,
-      isActive: () => !destroyed && !suspended && gateGeneration === firstVisualGateGeneration,
+      entities: [background, floor, title, drumPlane]
+        .map((entity) => ({ entity, minOpacity: 0.98 })),
+      isAnchorVisible: () => tracked
+        && (debug || stable.hasValidFullTransform())
+        && anchor?.object3D?.visible !== false,
+      isVisualReady: () => foundationReady,
+      isActive: () => tracked
+        && !destroyed
+        && !suspended
+        && gateGeneration === firstVisualGateGeneration,
       signal,
     }).then((ready) => {
       if (!ready || gateGeneration !== firstVisualGateGeneration) return false
@@ -1824,6 +1831,18 @@ export function createPage3Experience({
 
   const resumeAfterTracking = () => {
     if ([PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) return
+    if (![PAGE3_STATES.HIDDEN, PAGE3_STATES.LOADING].includes(state)) {
+      showFoundation()
+      ;[background, floor, title, drumPlane].forEach((entity) => {
+        entity?.object3D?.traverse?.((object) => {
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          materials.filter(Boolean).forEach((material) => {
+            material.needsUpdate = true
+          })
+        })
+      })
+      foundationReady = true
+    }
     mediaPausedForTracking.forEach((media) => {
       const path = media.dataset.page3Src || media.currentSrc
       safePlay(media, path)
@@ -1837,6 +1856,22 @@ export function createPage3Experience({
       tracked = true
       lostStartedAt = 0
       return
+    }
+    const lostDuration = lostStartedAt > 0 ? performance.now() - lostStartedAt : 0
+    const requiresVisualRestore = ![
+      PAGE3_STATES.HIDDEN,
+      PAGE3_STATES.LOADING,
+      PAGE3_STATES.REAL_VIDEO,
+      PAGE3_STATES.COMPLETE,
+    ].includes(state) && (
+      anchor?.object3D?.visible === false
+      || lostDuration > config.tracking.lostHoldDuration
+    )
+    if (requiresVisualRestore) {
+      firstVisualGateGeneration += 1
+      firstVisualGatePromise = null
+      firstVisualFrameReady = false
+      foundationVisibleRequested = true
     }
     suspended = false
     tracked = true
@@ -1872,6 +1907,7 @@ export function createPage3Experience({
     } else {
       setVisible(anchor, true)
       resumeAfterTracking()
+      if (requiresVisualRestore) startFirstVisualFrameGate()
     }
     syncEntryUi()
     renderDebug()

@@ -605,10 +605,10 @@ export function createPage2Experience({
       && isLayerTextureRenderable('mainBase')
   }
   const firstVisualEntities = [
-    backgroundPlane,
-    root.querySelector('#page2-floor-base'),
-    root.querySelector('[data-page2-asset-key="title"]'),
-    root.querySelector('[data-page2-asset-key="mainBase"]'),
+    { entity: backgroundPlane, minOpacity: 0.98 },
+    { entity: root.querySelector('#page2-floor-base'), minOpacity: 0.98 },
+    { entity: root.querySelector('[data-page2-asset-key="title"]'), minOpacity: 0.98 },
+    { entity: root.querySelector('[data-page2-asset-key="mainBase"]'), minOpacity: 0.98 },
   ]
   let firstVisualGatePromise = null
   let firstVisualGateRunId = -1
@@ -622,8 +622,16 @@ export function createPage2Experience({
     firstVisualGatePromise = waitForFirstVisualFrame({
       sceneEl: scene,
       entities: firstVisualEntities,
-      isAnchorVisible: () => anchor?.object3D?.visible !== false,
-      isActive: () => !destroyed && !suspended && runId === page2Runtime.entranceRunId,
+      isAnchorVisible: () => tracked
+        && (debug || stable.hasValidFullTransform())
+        && anchor?.object3D?.visible !== false,
+      isVisualReady: () => backgroundTimelineStarted
+        && backgroundElapsed >= finiteOr(config.background.openDuration, 900, 'background.openDuration')
+        && isPage2FoundationRenderable(),
+      isActive: () => tracked
+        && !destroyed
+        && !suspended
+        && runId === page2Runtime.entranceRunId,
       signal,
     }).then((ready) => {
       if (!ready || runId !== page2Runtime.entranceRunId) return false
