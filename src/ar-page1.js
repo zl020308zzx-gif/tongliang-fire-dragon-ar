@@ -7,11 +7,15 @@ import { createPanelRiseController } from './tilt-controller.js'
 import { createStableAnchorController } from './stable-anchor-controller.js'
 import { PAGE2_CONFIG } from './page2/page2-config.js'
 import { createPage2Experience, page2AssetsMarkup, page2SceneMarkup, page2UiMarkup } from './page2/page2.js'
-import { startPage2CriticalPreload } from './page2/page2-preloader.js'
+import { createPage2Preloader } from './page2/page2-preloader.js'
 import { PAGE3_CONFIG } from './page3/page3-config.js'
 import { createPage3Experience, page3AssetsMarkup, page3SceneMarkup, page3UiMarkup } from './page3/page3.js'
 import { createPage3Preloader } from './page3/page3-preloader.js'
-import { createSharedModuleUi, sharedModuleUiMarkup } from './shared-module-ui.js'
+import {
+  createSharedModuleUi,
+  sharedModuleUiMarkup,
+  waitForFirstVisualFrame,
+} from './shared-module-ui.js'
 import { createModuleAssetLoader, loadImageElement, waitForMountedFrames } from './module-asset-loader.js'
 
 export const AR_PAGE1_STATES = Object.freeze({
@@ -32,22 +36,36 @@ export const APP_AR_STATES = Object.freeze({
   MODULE_ACTIVE: 'MODULE_ACTIVE',
 })
 
+export const AR_ROUTES = Object.freeze({
+  PAGE1: 'page1',
+  PAGE2: 'page2',
+  PAGE3: 'page3',
+  COLLECTION: 'collection',
+})
+
+export const resolveActiveRoute = (search = window.location.search) => {
+  const requested = new URLSearchParams(search).get('ar')
+  return [AR_ROUTES.PAGE1, AR_ROUTES.PAGE2, AR_ROUTES.PAGE3].includes(requested)
+    ? requested
+    : AR_ROUTES.COLLECTION
+}
+
 const vector = (values) => values.join(' ')
 
-const imageEntity = (assetId, entityConfig, extra = '') => `
-  <a-image src="#${assetId}" position="${vector(entityConfig.position)}"
+const imageEntity = (assetId, entityConfig, extra = '', bindSource = true) => `
+  <a-image ${bindSource ? `src="#${assetId}"` : ''} position="${vector(entityConfig.position)}"
     rotation="${vector(entityConfig.rotation)}" width="${entityConfig.size.width}"
     height="${entityConfig.size.height}"
     material="transparent: true; alphaTest: 0.01; depthWrite: true; depthTest: true; side: double; shader: flat" ${extra}></a-image>
 `
 
-const explodedGroup = (config) => `
+const explodedGroup = (config, bindSource = true) => `
   <a-entity id="explodedCraftGroup" position="${vector(config.groupPosition)}"
     rotation="${vector(config.groupRotation)}" visible="false">
     ${config.layers
       .map(
         (layer) => `<a-image data-explode-layer="${layer.id}" data-render-order="${layer.renderOrder}"
-          ${layer.id === 'lineart' ? `src="#explode-${layer.id}"` : ''}
+          ${layer.id === 'lineart' && bindSource ? `src="#explode-${layer.id}"` : ''}
           position="0 0 0" width="${config.planeSize.width}" height="${config.planeSize.height}"
           material="transparent: true; alphaTest: 0.01; opacity: 1; depthWrite: false; depthTest: true; side: double; shader: flat"></a-image>`,
       )
@@ -80,14 +98,12 @@ export function renderArPage1(root) {
     : null
   const page2Debug = params.get('debug') === '1' && params.get('ar') === 'page2'
   const page3Debug = params.get('debug') === '1' && params.get('ar') === 'page3'
-  const requestedAr = params.get('ar')
-  const page1Entry = requestedAr === 'page1'
-  const page2Entry = requestedAr === 'page2'
-  const page3Entry = requestedAr === 'page3'
-  const collectionMode = !requestedAr
+  const activeRoute = resolveActiveRoute()
+  const page1Entry = activeRoute === AR_ROUTES.PAGE1
+  const page2Entry = activeRoute === AR_ROUTES.PAGE2
+  const page3Entry = activeRoute === AR_ROUTES.PAGE3
+  const collectionMode = activeRoute === AR_ROUTES.COLLECTION
   const page1Enabled = collectionMode || page1Entry
-  const page2Enabled = collectionMode || page2Entry
-  const page3Enabled = collectionMode || page3Entry
   const page2MindarTuning = page2Entry
     ? `; warmupTolerance: ${PAGE2_CONFIG.mindar.warmupTolerance}; missTolerance: ${PAGE2_CONFIG.mindar.missTolerance}; filterMinCF: ${PAGE2_CONFIG.mindar.filterMinCF}; filterBeta: ${PAGE2_CONFIG.mindar.filterBeta}`
     : ''
@@ -107,19 +123,25 @@ export function renderArPage1(root) {
   let page3Scene = ''
   let page3Ui = ''
 
-  try {
+  if (page2Entry) try {
     page2Assets = page2AssetsMarkup(PAGE2_CONFIG)
     page2Scene = page2SceneMarkup(PAGE2_CONFIG, page2Debug)
     page2Ui = page2UiMarkup(PAGE2_CONFIG, page2Debug)
   } catch (error) {
     console.error('[page2] Scene markup disabled; Page1 remains available.', error)
   }
-  try {
+  else if (collectionMode) {
+    page2Scene = `<a-entity id="page2-target" mindar-image-target="targetIndex: ${PAGE2_CONFIG.targetIndex}"></a-entity>`
+  }
+  if (page3Entry) try {
     page3Assets = page3AssetsMarkup(PAGE3_CONFIG)
     page3Scene = page3SceneMarkup(PAGE3_CONFIG, page3Debug)
     page3Ui = page3UiMarkup(PAGE3_CONFIG, page3Debug)
   } catch (error) {
     console.error('[page3] Scene markup disabled; existing pages remain available.', error)
+  }
+  else if (collectionMode) {
+    page3Scene = `<a-entity id="page3-target" mindar-image-target="targetIndex: ${PAGE3_CONFIG.targetIndex}"></a-entity>`
   }
 
   let legacyStorageCleaned = false
@@ -165,7 +187,7 @@ export function renderArPage1(root) {
         </a-entity>
 
         <a-entity id="stableAnchor" visible="false">
-          <a-image id="page1-floor-base" src="#page1-floor-asset"
+          <a-image id="page1-floor-base" ${page1Entry ? 'src="#page1-floor-asset"' : ''}
             width="${config.ar.floor.width}" height="${config.ar.floor.height}"
             position="${vector(config.ar.floor.position)}" rotation="${vector(config.ar.floor.rotation)}"
             scale="${vector(config.ar.floor.scale)}" data-render-order="${config.ar.floor.renderOrder}"
@@ -192,8 +214,8 @@ export function renderArPage1(root) {
                   )
                   .join('')}
               </a-entity>
-              ${imageEntity('craft-panel-asset', config.backgroundBoard, 'id="craft-panel-surface" data-render-order="0"')}
-              ${imageEntity('page1-title-asset', config.titleImage, 'id="page1-title-image" data-render-order="1" visible="false"')}
+              ${imageEntity('craft-panel-asset', config.backgroundBoard, 'id="craft-panel-surface" data-render-order="0"', page1Entry)}
+              ${imageEntity('page1-title-asset', config.titleImage, 'id="page1-title-image" data-render-order="1" visible="false"', page1Entry)}
               <a-plane id="craft-plane" position="${vector(config.craftPlane.position)}"
                 rotation="${vector(config.craftPlane.rotation)}" width="${config.craftPlane.size.width}"
                 height="${config.craftPlane.size.height}"
@@ -204,7 +226,7 @@ export function renderArPage1(root) {
                 height="${config.badge.size.height}" scale="0.6 0.6 0.6"
                 material="transparent: true; alphaTest: 0.01; depthWrite: true; depthTest: true; side: double; shader: flat"
                 visible="false"></a-image>
-              ${explodedGroup(config.explodedView)}
+              ${explodedGroup(config.explodedView, page1Entry)}
             </a-entity>
           </a-entity>
         </a-entity>
@@ -241,7 +263,6 @@ export function renderArPage1(root) {
         ).join('')}
       </div>
       <p class="craft-feedback" role="status" hidden></p>
-      <p class="layer-error" role="alert" hidden></p>
 
       <section class="step-card" aria-labelledby="step-title">
         <p class="step-number">${config.copy.steps.lineart.number}</p>
@@ -300,12 +321,12 @@ export function renderArPage1(root) {
 
   const scene = root.querySelector('#page1-ar-scene')
   const target = root.querySelector('#page1-target')
-  const page2Target = root.querySelector('#page2-target')
-  const page2Anchor = root.querySelector('#page2-anchor')
-  const page2Preloader = page2Entry ? startPage2CriticalPreload({ root, config: PAGE2_CONFIG, debug: page2Debug }) : null
-  const page3Target = root.querySelector('#page3-target')
-  const page3Anchor = root.querySelector('#page3-anchor')
-  const page3Preloader = page3Entry ? createPage3Preloader({ root, config: PAGE3_CONFIG, debug: page3Debug }) : null
+  let page2Target = root.querySelector('#page2-target')
+  let page2Anchor = root.querySelector('#page2-anchor')
+  let page2Preloader = page2Entry ? createPage2Preloader({ root, config: PAGE2_CONFIG, debug: page2Debug }) : null
+  let page3Target = root.querySelector('#page3-target')
+  let page3Anchor = root.querySelector('#page3-anchor')
+  let page3Preloader = page3Entry ? createPage3Preloader({ root, config: PAGE3_CONFIG, debug: page3Debug }) : null
   const stableAnchor = root.querySelector('#stableAnchor')
   const preview = root.querySelector('.page1-ar')
   const page1FloorImage = root.querySelector('#page1-floor-asset')
@@ -341,8 +362,20 @@ export function renderArPage1(root) {
   let page1FloorReadyPromise = null
   let page1TitleReady = false
   let page1PendingEnter = false
+  let page1FoundationVisibleRequested = false
+  let page1FirstVisualFrameReady = false
+  let page1FirstVisualGatePromise = null
   let page1CriticalSnapshot = { criticalProgress: 0, criticalReady: false, criticalFailed: false }
   let page1ActivationId = 0
+  let retryPage1Critical = () => Promise.resolve(null)
+  const page1DebugCounters = {
+    page1TargetFoundCount: 0,
+    page1TargetLostCount: 0,
+    stableAnchorVisibleChangeCount: 0,
+    page1FloorVisibleChangeCount: 0,
+    page1BackgroundVisibleChangeCount: 0,
+    lineartLoadAttemptCount: 0,
+  }
   let appDebugTimer = null
   const angleWarnings = new Set()
   let markerAspect = aspect
@@ -381,8 +414,14 @@ export function renderArPage1(root) {
     }
   }
 
-  const ensureAFrameImageReady = async (image, entity, path) => {
-    await loadImageElement(image, path)
+  const ensureAFrameImageReady = async (image, entity, path, reportStage = () => {}) => {
+    await loadImageElement(image, path, {
+      onLoaded: () => reportStage('loaded'),
+      onRequest: () => {
+        if (path === config.assets.craftLayers[0].path) page1DebugCounters.lineartLoadAttemptCount += 1
+      },
+    })
+    reportStage('decoded')
     if (!scene.hasLoaded) await new Promise((resolve) => scene.addEventListener('loaded', resolve, { once: true }))
     entity.setAttribute('src', `#${image.id}`)
     let textures = []
@@ -408,13 +447,14 @@ export function renderArPage1(root) {
       try { scene.renderer?.initTexture?.(texture) } catch { texture.needsUpdate = true }
     })
     await waitForMountedFrames(() => Boolean(entity.object3D?.parent), 2)
+    reportStage('gpuReady')
     return true
   }
 
-  const ensurePage1FloorReady = () => {
+  const ensurePage1FloorReady = (reportStage) => {
     if (page1FloorReady) return Promise.resolve(true)
     if (page1FloorReadyPromise) return page1FloorReadyPromise
-    page1FloorReadyPromise = ensureAFrameImageReady(page1FloorImage, page1Floor, config.assets.floorBase)
+    page1FloorReadyPromise = ensureAFrameImageReady(page1FloorImage, page1Floor, config.assets.floorBase, reportStage)
       .then(() => {
         page1FloorReady = true
         root.querySelector('[data-app-debug-page1-floor]')?.replaceChildren('true')
@@ -434,27 +474,44 @@ export function renderArPage1(root) {
           {
             key: 'background',
             path: config.assets.backgroundBoard,
-            load: () => ensureAFrameImageReady(root.querySelector('#craft-panel-asset'), craftPanel, config.assets.backgroundBoard),
+            load: (reportStage) => ensureAFrameImageReady(
+              root.querySelector('#craft-panel-asset'),
+              craftPanel,
+              config.assets.backgroundBoard,
+              reportStage,
+            ),
           },
           { key: 'floor', path: config.assets.floorBase, load: ensurePage1FloorReady },
           {
             key: 'title',
             path: config.assets.titleImage,
-            load: () => ensureAFrameImageReady(page1TitleImage, page1TitleEntity, config.assets.titleImage).then(() => {
+            load: (reportStage) => ensureAFrameImageReady(
+              page1TitleImage,
+              page1TitleEntity,
+              config.assets.titleImage,
+              reportStage,
+            ).then(() => {
               page1TitleReady = true
             }),
           },
           {
             key: 'lineart',
             path: config.assets.craftLayers[0].path,
-            load: () => loadImageElement(root.querySelector('#explode-lineart'), config.assets.craftLayers[0].path),
+            load: (reportStage) => loadImageElement(
+              root.querySelector('#explode-lineart'),
+              config.assets.craftLayers[0].path,
+              {
+                onLoaded: () => reportStage('loaded'),
+                onRequest: () => {
+                  page1DebugCounters.lineartLoadAttemptCount += 1
+                },
+              },
+            ).then((image) => {
+              reportStage('decoded')
+              root.querySelector('[data-explode-layer="lineart"]')?.setAttribute('src', '#explode-lineart')
+              return image
+            }),
             validate: () => Boolean(craftPlane?.object3D?.parent),
-          },
-          {
-            key: 'lowerLeftHotspot',
-            path: 'page1:left-lower-hotspot',
-            load: () => true,
-            validate: () => Boolean(markerPlane?.object3D?.parent && hotspotVisual?.object3D?.parent),
           },
         ],
         nextStepAssets: [
@@ -492,12 +549,58 @@ export function renderArPage1(root) {
       if (moduleId !== 'page1') return
       page1CriticalSnapshot = snapshot
       if (page1PendingEnter) {
-        sharedModuleUi.showLoading(0, snapshot.criticalProgress, snapshot.criticalFailed, () => {
-          page1Loader.retryFailedAssets('page1')
+        const establishingVisual = snapshot.criticalReady && !snapshot.criticalFailed
+        sharedModuleUi.showLoading({
+          targetIndex: 0,
+          title: '正在加载《竹骨成龙》',
+          progress: establishingVisual ? 99 : Math.min(99, snapshot.criticalProgress),
+          stage: establishingVisual ? 'scene' : snapshot.currentStage,
+          currentPath: snapshot.currentAssetPath,
+          failed: snapshot.criticalFailed,
+          onRetry: () => retryPage1Critical(),
         })
       }
     },
   })
+
+  const startPage1FirstVisualFrameGate = (activationId) => {
+    if (page1FirstVisualFrameReady) return Promise.resolve(true)
+    if (page1FirstVisualGatePromise) return page1FirstVisualGatePromise
+    page1FoundationVisibleRequested = true
+    const lineartEntity = root.querySelector('[data-explode-layer="lineart"]')
+    const textureEntities = [craftPanel, page1Floor, page1TitleEntity, lineartEntity]
+      .filter(Boolean)
+      .map((entity) => ({ entity, requireVisible: false }))
+    const initialVisualEntity = craftStarted
+      ? craftPlane
+      : bambooClicked
+        ? craftPanel
+        : hotspotVisual
+    page1FirstVisualGatePromise = waitForFirstVisualFrame({
+      sceneEl: scene,
+      entities: [
+        ...textureEntities,
+        {
+          entity: initialVisualEntity,
+          requireTexture: initialVisualEntity !== hotspotVisual,
+          requireOpacity: initialVisualEntity !== hotspotVisual,
+        },
+      ],
+      isAnchorVisible: () => stableAnchor?.object3D?.visible !== false,
+      isActive: () => !signal.aborted && activationId === page1ActivationId,
+      signal,
+    }).then((ready) => {
+      if (!ready || activationId !== page1ActivationId) return false
+      page1FirstVisualFrameReady = true
+      page1PendingEnter = false
+      sharedModuleUi.completeLoading()
+      updateAppDebug()
+      return true
+    }).finally(() => {
+      if (activationId === page1ActivationId) page1FirstVisualGatePromise = null
+    })
+    return page1FirstVisualGatePromise
+  }
 
   const updateAppDebug = () => {
     if (params.get('debug') !== '1') return
@@ -620,6 +723,28 @@ export function renderArPage1(root) {
     const p3Video = root.querySelector('#page3-dragon-video')
     const p3IronVideo = root.querySelector('#page3-ironflower-video')
     const extended = {
+      build: typeof __BUILD_META__ === 'undefined' ? null : __BUILD_META__,
+      baseUrl: import.meta.env.BASE_URL,
+      activeRoute,
+      mobileAssets: activeTargetIndex === 1
+        ? Boolean(PAGE2_CONFIG.mobileAssets)
+        : activeTargetIndex === 2
+          ? Boolean(PAGE3_CONFIG.mobileAssets)
+          : false,
+      criticalAssetPaths: activeTargetIndex === 0
+        ? [
+            config.assets.backgroundBoard,
+            config.assets.floorBase,
+            config.assets.titleImage,
+            config.assets.craftLayers[0].path,
+          ]
+        : activeTargetIndex === 1
+          ? ['floor', 'background', 'title', 'mainBase'].map((key) => PAGE2_CONFIG.assets[key])
+          : activeTargetIndex === 2
+            ? ['background', 'floor', 'title', 'drum'].map((key) => PAGE3_CONFIG.assets[key])
+            : [],
+      failedStage: activePreload?.failedStage || activePreload?.currentStage || '',
+      ...page1DebugCounters,
       currentModule: moduleNames[activeTargetIndex] || null,
       currentState: activeState?.currentState || activeState?.state || arState,
       activeTargetIndex,
@@ -636,7 +761,14 @@ export function renderArPage1(root) {
       targetLost: activeTargetIndex >= 0 && !(activeState?.tracked ?? lifecycle?.isTracked?.() ?? false),
       criticalProgress: Math.round(activePreload?.criticalProgress ?? activePreload?.progress ?? 0),
       criticalReady: Boolean(activePreload?.criticalReady),
+      criticalGpuReady: Boolean(activePreload?.criticalReady),
       criticalFailed: Boolean(activePreload?.criticalFailed || activePreload?.targetFailed),
+      foundationVisibleRequested: activeTargetIndex === 0
+        ? page1FoundationVisibleRequested
+        : Boolean(activeState?.foundationVisibleRequested),
+      firstVisualFrameReady: activeTargetIndex === 0
+        ? page1FirstVisualFrameReady
+        : Boolean(activeState?.firstVisualFrameReady),
       pendingEnter: Boolean(page1PendingEnter || activeState?.pendingEnter),
       rootMounted: Boolean(rootEntity?.object3D?.parent),
       rootVisible: Boolean(rootEntity?.object3D?.visible && rootEntity?.getAttribute('visible') !== false),
@@ -724,6 +856,11 @@ export function renderArPage1(root) {
 
   const setEntityVisible = (entity, visible) => {
     if (!entity?.object3D) return
+    const previous = isEntityVisible(entity)
+    if (previous !== visible) {
+      if (entity === page1Floor) page1DebugCounters.page1FloorVisibleChangeCount += 1
+      if (entity === craftPanel) page1DebugCounters.page1BackgroundVisibleChangeCount += 1
+    }
     entity.object3D.visible = visible
     entity.setAttribute('visible', visible)
   }
@@ -933,6 +1070,17 @@ export function renderArPage1(root) {
     signal,
     actions,
   })
+  arBridge.onImageLoadAttempt = (path) => {
+    if (path === config.assets.craftLayers[0].path) page1DebugCounters.lineartLoadAttemptCount += 1
+  }
+  arBridge.onAssetError = ({ path = '', stage = 'network' } = {}) => {
+    if (activeTargetIndex !== 0) return
+    sharedModuleUi.showError(0, {
+      path,
+      stage,
+      progress: page1CriticalSnapshot.criticalProgress,
+    }, () => retryPage1Critical())
+  }
 
   let page1ControllerInitialized = false
   let pageCleanup = () => {}
@@ -1054,6 +1202,242 @@ export function renderArPage1(root) {
     updateTrackingDebug()
   }
 
+  const continuePage1Entry = (snapshot, activationId) => {
+    if (activationId !== page1ActivationId || !lifecycle?.isTracked() || !snapshot?.criticalReady) {
+      return false
+    }
+    setArState(AR_PAGE1_STATES.TARGET_FOUND)
+    if (craftStarted) resumeTrackedExperience()
+    else if (resumeArState === AR_PAGE1_STATES.PANEL_RISING) {
+      setArState(AR_PAGE1_STATES.PANEL_RISING)
+      ui.showPanelRising()
+      panelHinge.object3D.visible = true
+      panelHinge.setAttribute('visible', true)
+      panelController.resume()
+    } else if (resumeArState === AR_PAGE1_STATES.WAIT_TILT) {
+      beginLiftGuide()
+    } else if (bambooClicked) {
+      panelController.configure(panelConfig.modes.vertical, markerAspect)
+      beginPanelRise()
+    } else {
+      setArState(AR_PAGE1_STATES.WAIT_BAMBOO)
+      hotspot.setEnabled(true)
+      ui.showHotspot()
+    }
+    if (page1PendingEnter) {
+      sharedModuleUi.showLoading({
+        targetIndex: 0,
+        title: '正在加载《竹骨成龙》',
+        progress: 99,
+        stage: 'scene',
+        onRetry: () => retryPage1Critical(),
+      })
+      startPage1FirstVisualFrameGate(activationId)
+    }
+    return true
+  }
+
+  retryPage1Critical = () => page1Loader.retryFailedAssets('page1').then((snapshot) => {
+    continuePage1Entry(snapshot, page1ActivationId)
+    return snapshot
+  })
+
+  let page2PreloadUnsubscribe = () => {}
+  let page3PreloadUnsubscribe = () => {}
+
+  const showModuleLoader = (targetIndex, snapshot, controller, retry) => {
+    const state = controller?.getState?.() || {}
+    if (activeTargetIndex !== targetIndex) return
+    if (state.firstVisualFrameReady) {
+      sharedModuleUi.completeLoading()
+      return
+    }
+    const loadingPending = state.pendingEnter
+      || state.moduleEntered
+      || state.foundationVisibleRequested
+    if (!loadingPending) return
+    const establishingVisual = snapshot.criticalReady && !snapshot.criticalFailed
+    sharedModuleUi.showLoading({
+      targetIndex,
+      title: targetIndex === 1
+        ? '正在加载《龙脉探源》'
+        : '正在加载《火舞夜空》',
+      progress: establishingVisual ? 99 : Math.min(99, snapshot.criticalProgress || 0),
+      stage: establishingVisual ? 'scene' : snapshot.failedStage || snapshot.currentStage,
+      currentPath: snapshot.currentLoadingPath
+        || snapshot.criticalFailedPaths?.[0]
+        || snapshot.criticalTimedOutPaths?.[0]
+        || '',
+      failed: snapshot.criticalFailed,
+      onRetry: retry,
+    })
+  }
+
+  const installCollectionModule = (targetIndex) => {
+    if (!collectionMode) return
+    const isPage2 = targetIndex === 1
+    const targetElement = isPage2 ? page2Target : page3Target
+    const anchorId = isPage2 ? 'page2-anchor' : 'page3-anchor'
+    if (!targetElement || root.querySelector(`#${anchorId}`)) return
+    const assetsMarkup = isPage2
+      ? page2AssetsMarkup(PAGE2_CONFIG)
+      : page3AssetsMarkup(PAGE3_CONFIG)
+    const sceneMarkup = isPage2
+      ? page2SceneMarkup(PAGE2_CONFIG, page2Debug)
+      : page3SceneMarkup(PAGE3_CONFIG, page3Debug)
+    const uiMarkup = isPage2
+      ? page2UiMarkup(PAGE2_CONFIG, page2Debug)
+      : page3UiMarkup(PAGE3_CONFIG, page3Debug)
+    const assetsHost = root.querySelector(isPage2 ? '.page2-preload-assets' : '.page3-preload-assets')
+    if (assetsHost) assetsHost.innerHTML = assetsMarkup
+    const template = document.createElement('template')
+    template.innerHTML = sceneMarkup
+    const generatedTarget = template.content.querySelector(isPage2 ? '#page2-target' : '#page3-target')
+    if (generatedTarget) targetElement.replaceChildren(...generatedTarget.childNodes)
+    const generatedAnchor = template.content.querySelector(`#${anchorId}`)
+    if (generatedAnchor) scene.append(generatedAnchor)
+    preview.insertAdjacentHTML('beforeend', uiMarkup)
+    page2Target = root.querySelector('#page2-target')
+    page2Anchor = root.querySelector('#page2-anchor')
+    page3Target = root.querySelector('#page3-target')
+    page3Anchor = root.querySelector('#page3-anchor')
+  }
+
+  const ensurePage2Experience = (syncTracked = false) => {
+    if (page2Controller) return page2Controller
+    installCollectionModule(1)
+    if (!page2Target || !page2Anchor) return null
+    page2Preloader ||= createPage2Preloader({ root, config: PAGE2_CONFIG, debug: page2Debug })
+    page2Controller = createPage2Experience({
+      root,
+      scene,
+      target: page2Target,
+      anchor: page2Anchor,
+      config: PAGE2_CONFIG,
+      debug: page2Debug,
+      preloader: page2Preloader,
+      onActivate() {
+        page1ActivationId += 1
+        page1FirstVisualGatePromise = null
+        setAppState(APP_AR_STATES.MODULE_ACTIVE, 1)
+        const snapshot = page2Preloader.getSnapshot()
+        sharedModuleUi.showLoading({
+          targetIndex: 1,
+          title: '正在加载《龙脉探源》',
+          progress: Math.min(99, snapshot.criticalProgress || 0),
+          stage: snapshot.currentStage || 'idle',
+          currentPath: snapshot.currentLoadingPath || '',
+          failed: snapshot.criticalFailed,
+          onRetry: () => page2Controller.retryFailed(),
+        })
+        ui.showModule()
+        page3Controller?.suspendForOtherTarget()
+        stableAnchorController?.setTracked(false)
+        setEntityVisible(stableAnchor, false)
+        hotspot?.setTracked(false)
+        panelController?.pause()
+        if (craftStarted) arBridge.pauseTracking?.()
+        ui.hideLost()
+        arBridge.hideHints?.('已切换至第二页识别图')
+      },
+      onTrackingFound: () => sharedModuleUi.hideLost(),
+      onTrackingLost: () => sharedModuleUi.showLost(),
+      onEntryStateChange: () => showModuleLoader(
+        1,
+        page2Preloader.getSnapshot(),
+        page2Controller,
+        () => page2Controller.retryFailed(),
+      ),
+      onFirstVisualFrameReady: () => showModuleLoader(
+        1,
+        page2Preloader.getSnapshot(),
+        page2Controller,
+        () => page2Controller.retryFailed(),
+      ),
+      onAssetError: (failure) => {
+        if (activeTargetIndex === 1 && !page2Controller?.getState?.().firstVisualFrameReady) {
+          sharedModuleUi.showError(1, failure, () => page2Controller.retryFailed())
+        }
+      },
+    })
+    page2PreloadUnsubscribe = page2Preloader.subscribe((snapshot) => showModuleLoader(
+      1,
+      snapshot,
+      page2Controller,
+      () => page2Controller.retryFailed(),
+    ))
+    if (syncTracked) page2Controller.syncTracked(true)
+    return page2Controller
+  }
+
+  const ensurePage3Experience = (syncTracked = false) => {
+    if (page3Controller) return page3Controller
+    installCollectionModule(2)
+    if (!page3Target || !page3Anchor) return null
+    page3Preloader ||= createPage3Preloader({ root, config: PAGE3_CONFIG, debug: page3Debug })
+    page3Controller = createPage3Experience({
+      root,
+      scene,
+      target: page3Target,
+      anchor: page3Anchor,
+      config: PAGE3_CONFIG,
+      debug: page3Debug,
+      preloader: page3Preloader,
+      onActivate() {
+        page1ActivationId += 1
+        page1FirstVisualGatePromise = null
+        setAppState(APP_AR_STATES.MODULE_ACTIVE, 2)
+        const snapshot = page3Preloader.getSnapshot()
+        sharedModuleUi.showLoading({
+          targetIndex: 2,
+          title: '正在加载《火舞夜空》',
+          progress: Math.min(99, snapshot.criticalProgress || 0),
+          stage: snapshot.currentStage || 'idle',
+          currentPath: snapshot.currentLoadingPath || '',
+          failed: snapshot.criticalFailed,
+          onRetry: () => page3Preloader.retryFailed().then(() => page3Preloader.startCritical()),
+        })
+        ui.showModule()
+        page2Controller?.suspendForOtherTarget()
+        stableAnchorController?.setTracked(false)
+        setEntityVisible(stableAnchor, false)
+        hotspot?.setTracked(false)
+        panelController?.pause()
+        if (craftStarted) arBridge.pauseTracking?.()
+        ui.hideLost()
+        arBridge.hideHints?.('已切换至第三页识别图')
+      },
+      onTrackingFound: () => sharedModuleUi.hideLost(),
+      onTrackingLost: () => sharedModuleUi.showLost(),
+      onEntryStateChange: () => showModuleLoader(
+        2,
+        page3Preloader.getSnapshot(),
+        page3Controller,
+        () => page3Preloader.retryFailed().then(() => page3Preloader.startCritical()),
+      ),
+      onFirstVisualFrameReady: () => showModuleLoader(
+        2,
+        page3Preloader.getSnapshot(),
+        page3Controller,
+        () => page3Preloader.retryFailed().then(() => page3Preloader.startCritical()),
+      ),
+      onAssetError: (failure) => {
+        if (activeTargetIndex === 2 && !page3Controller?.getState?.().firstVisualFrameReady) {
+          sharedModuleUi.showError(2, failure, () =>
+            page3Preloader.retryFailed().then(() => page3Preloader.startCritical()))
+        }
+      },
+    })
+    page3PreloadUnsubscribe = page3Preloader.subscribe((snapshot) => showModuleLoader(
+      2,
+      snapshot,
+      page3Controller,
+      () => page3Preloader.retryFailed().then(() => page3Preloader.startCritical()),
+    ))
+    if (syncTracked) page3Controller.syncTracked(true)
+    return page3Controller
+  }
+
   const setupArControllers = () => {
     if (controllersReady || !scene.canvas) return
     controllersReady = true
@@ -1111,6 +1495,9 @@ export function renderArPage1(root) {
       target,
       anchor: stableAnchor,
       config: config.ar.trackingSmoothing,
+      onVisibleChange() {
+        page1DebugCounters.stableAnchorVisibleChangeCount += 1
+      },
       onUpdate(state) {
         stableDebugState = state
         updateStabilizeDebug(state)
@@ -1128,74 +1515,21 @@ export function renderArPage1(root) {
       },
     })
 
-    if (page2Enabled && page2Target && page2Anchor) {
+    if (page2Entry) {
       try {
-        page2Controller = createPage2Experience({
-          root,
-          scene,
-          target: page2Target,
-          anchor: page2Anchor,
-          config: PAGE2_CONFIG,
-          debug: page2Debug,
-          preloader: page2Preloader,
-          onActivate() {
-            setAppState(APP_AR_STATES.MODULE_ACTIVE, 1)
-            ui.showModule()
-            page3Controller?.suspendForOtherTarget()
-            stableAnchorController?.setTracked(false)
-            setEntityVisible(stableAnchor, false)
-            hotspot?.setTracked(false)
-            panelController?.pause()
-            if (craftStarted) arBridge.pauseTracking?.()
-            ui.hideLost()
-            arBridge.hideHints?.('已切换至第二页识别图')
-          },
-          onTrackingFound: () => sharedModuleUi.hideLost(),
-          onTrackingLost: () => sharedModuleUi.showLost(),
-        })
+        ensurePage2Experience()
       } catch (error) {
         console.error('[page2] initialization failed', error)
-        const page2Error = root.querySelector('.page2-error')
-        if (page2Error) {
-          page2Error.textContent = '第二页初始化失败，请刷新后重新扫描'
-          page2Error.hidden = false
-        }
+        sharedModuleUi.showError(1, { message: error.message, stage: 'scene' })
       }
     }
 
-    if (page3Enabled && page3Target && page3Anchor) {
+    if (page3Entry) {
       try {
-        page3Controller = createPage3Experience({
-          root,
-          scene,
-          target: page3Target,
-          anchor: page3Anchor,
-          config: PAGE3_CONFIG,
-          debug: page3Debug,
-          preloader: page3Preloader,
-          onActivate() {
-            setAppState(APP_AR_STATES.MODULE_ACTIVE, 2)
-            ui.showModule()
-            page2Controller?.suspendForOtherTarget()
-            stableAnchorController?.setTracked(false)
-            setEntityVisible(stableAnchor, false)
-            hotspot?.setTracked(false)
-            panelController?.pause()
-            if (craftStarted) arBridge.pauseTracking?.()
-            ui.hideLost()
-            arBridge.hideHints?.('已切换至第三页识别图')
-          },
-          onTrackingFound: () => sharedModuleUi.hideLost(),
-          onTrackingLost: () => sharedModuleUi.showLost(),
-        })
+        ensurePage3Experience()
       } catch (error) {
         console.error('[page3] initialization failed', error)
-        const page3Error = root.querySelector('.page3-error')
-        const page3ErrorText = root.querySelector('[data-page3-error-text]')
-        if (page3Error && page3ErrorText) {
-          page3ErrorText.textContent = '第三页初始化失败，请刷新后重新扫描'
-          page3Error.hidden = false
-        }
+        sharedModuleUi.showError(2, { message: error.message, stage: 'scene' })
       }
     }
 
@@ -1204,6 +1538,7 @@ export function renderArPage1(root) {
       lostDelayMs: config.ar.tracking.lostDelayMs,
       signal,
       onFound() {
+        page1DebugCounters.page1TargetFoundCount += 1
         ensurePage1Controller()
         const activationId = ++page1ActivationId
         page2Controller?.suspendForOtherTarget()
@@ -1215,41 +1550,26 @@ export function renderArPage1(root) {
         sharedModuleUi.hideLost()
         setAppState(APP_AR_STATES.MODULE_ACTIVE, 0)
         ui.showModule()
-        page1PendingEnter = true
+        page1PendingEnter = !page1FirstVisualFrameReady
         const initialSnapshot = page1Loader.getProgress('page1')
-        sharedModuleUi.showLoading(0, initialSnapshot.criticalProgress, initialSnapshot.criticalFailed, () => {
-          page1Loader.retryFailedAssets('page1')
-        })
-        page1Loader.loadCriticalAssets('page1').then((snapshot) => {
-          if (activationId !== page1ActivationId || !lifecycle?.isTracked()) return
-          if (!snapshot.criticalReady) return
-          page1PendingEnter = false
-          sharedModuleUi.hideLoading()
-          setArState(AR_PAGE1_STATES.TARGET_FOUND)
-          if (craftStarted) resumeTrackedExperience()
-          else if (resumeArState === AR_PAGE1_STATES.PANEL_RISING) {
-            setArState(AR_PAGE1_STATES.PANEL_RISING)
-            ui.showPanelRising()
-            panelHinge.object3D.visible = true
-            panelHinge.setAttribute('visible', true)
-            panelController.resume()
-          } else if (resumeArState === AR_PAGE1_STATES.WAIT_TILT) {
-            beginLiftGuide()
-          } else if (bambooClicked) {
-            panelController.configure(panelConfig.modes.vertical, markerAspect)
-            beginPanelRise()
-          }
-          else {
-            setArState(AR_PAGE1_STATES.WAIT_BAMBOO)
-            hotspot.setEnabled(true)
-            ui.showHotspot()
-          }
-        })
+        if (page1PendingEnter) {
+          sharedModuleUi.showLoading({
+            targetIndex: 0,
+            title: '正在加载《竹骨成龙》',
+            progress: Math.min(99, initialSnapshot.criticalProgress),
+            stage: initialSnapshot.currentStage,
+            currentPath: initialSnapshot.currentAssetPath,
+            failed: initialSnapshot.criticalFailed,
+            onRetry: () => retryPage1Critical(),
+          })
+        }
+        page1Loader.loadCriticalAssets('page1')
+          .then((snapshot) => continuePage1Entry(snapshot, activationId))
       },
       onLost() {
+        page1DebugCounters.page1TargetLostCount += 1
         page1ActivationId += 1
-        page1PendingEnter = false
-        sharedModuleUi.hideLoading()
+        page1FirstVisualGatePromise = null
         resumeArState = arState
         stableAnchorController.setTracked(false)
         hotspot.setTracked(false)
@@ -1272,6 +1592,25 @@ export function renderArPage1(root) {
     })
     applyMarkerAspect(markerAspect)
     updatePanelDebug()
+  }
+
+  if (collectionMode) {
+    page2Target?.addEventListener('targetFound', () => {
+      try {
+        ensurePage2Experience(true)
+      } catch (error) {
+        console.error('[page2] lazy initialization failed', error)
+        sharedModuleUi.showError(1, { message: error.message, stage: 'scene' })
+      }
+    }, { signal })
+    page3Target?.addEventListener('targetFound', () => {
+      try {
+        ensurePage3Experience(true)
+      } catch (error) {
+        console.error('[page3] lazy initialization failed', error)
+        sharedModuleUi.showError(2, { message: error.message, stage: 'scene' })
+      }
+    }, { signal })
   }
 
   const waitForCameraFrame = async (system) => {
@@ -1311,8 +1650,6 @@ export function renderArPage1(root) {
       const firstCameraFrameAt = performance.now()
       page2Controller?.notifyFirstCameraFrame?.(firstCameraFrameAt)
       page3Controller?.notifyFirstCameraFrame?.(firstCameraFrameAt)
-      if (page2Entry) page2Controller?.startAssetLoading()
-      if (page3Entry) page3Controller?.startAssetLoading()
     })().catch((error) => {
       cameraStartRequested = false
       cameraStartPromise = null
@@ -1364,8 +1701,6 @@ export function renderArPage1(root) {
       const sceneLoadedAt = performance.now()
       page2Controller?.notifySceneLoaded?.(sceneLoadedAt)
       page3Controller?.notifySceneLoaded?.(sceneLoadedAt)
-      if (page2Entry) page2Controller?.startAssetLoading()
-      if (page3Entry) page3Controller?.startAssetLoading()
     }
     if (scene.hasLoaded) prepareArControllers()
     else scene.addEventListener('loaded', prepareArControllers, { once: true, signal })
@@ -1378,6 +1713,8 @@ export function renderArPage1(root) {
     window.clearInterval(appDebugTimer)
     stableAnchorController?.destroy()
     lifecycle?.destroy()
+    page2PreloadUnsubscribe()
+    page3PreloadUnsubscribe()
     page2Controller?.destroy()
     page3Controller?.destroy()
     pageCleanup()

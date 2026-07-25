@@ -4,6 +4,8 @@ import {
   PAGE3_IMAGE_ENTRIES,
 } from './page3-config.js'
 import {
+  appendRetryQuery,
+  assetStageProgress,
   isTimeoutError,
   loadImageElement as loadSharedImageElement,
   loadMediaElement as loadSharedMediaElement,
@@ -43,6 +45,9 @@ export function createPage3Preloader({ root, config, debug = false }) {
   const promises = new Map()
   const status = new Map()
   const errors = new Map()
+  const stageProgress = new Map(PAGE3_IMAGE_ENTRIES.map(([, key]) => [key, 0]))
+  const retryCounts = new Map()
+  const failedStages = new Map()
   const listeners = new Set()
   const gpuReady = new Set()
   const gpuWaiters = new Map()
@@ -58,6 +63,7 @@ export function createPage3Preloader({ root, config, debug = false }) {
   let climaxPromise = null
   let realVideoPromise = null
   let currentLoadingPath = ''
+  let currentStage = 'idle'
   let requestCount = 0
   let generation = 0
   let destroyed = false
@@ -86,35 +92,35 @@ export function createPage3Preloader({ root, config, debug = false }) {
   })
 
   const snapshot = () => {
-    const criticalImagesReady = PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => status.get(key) === 'ready')
+    const criticalImagesReady = PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => decodedImages.has(key))
     const criticalGpuReady = PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => gpuReady.has(key))
     const criticalReady = PAGE3_CRITICAL_IMAGE_KEYS.every(
-      (key) => status.get(key) === 'ready' && gpuReady.has(key),
+      (key) => decodedImages.has(key) && gpuReady.has(key),
     )
     const deferredKeys = [
       ...PAGE3_DEFERRED_IMAGE_KEYS,
       ...mediaEntries.map(([, key]) => key),
     ]
     const deferredSettled = deferredKeys.every(
-      (key) => ['ready', 'failed', 'timedOut'].includes(status.get(key)),
+      (key) => ['ready', 'gpuReady', 'failed', 'timedOut'].includes(status.get(key)),
     )
     const pathsFor = (statuses) => PAGE3_CRITICAL_IMAGE_KEYS
       .filter((key) => statuses.includes(status.get(key)))
       .map((key) => config.assets[key])
-    const totalCriticalSteps = PAGE3_CRITICAL_IMAGE_KEYS.length * 2
-    const completedCriticalSteps = criticalImagesReady.length + criticalGpuReady.length
+    const criticalProgress = PAGE3_CRITICAL_IMAGE_KEYS.reduce(
+      (total, key) => total + (stageProgress.get(key) || 0),
+      0,
+    ) / PAGE3_CRITICAL_IMAGE_KEYS.length * 100
 
     return {
       criticalReady,
-      criticalProgress: totalCriticalSteps
-        ? (completedCriticalSteps / totalCriticalSteps) * 100
-        : 100,
+      criticalProgress,
       criticalTotal: PAGE3_CRITICAL_IMAGE_KEYS.length,
       criticalCompleted: criticalGpuReady.length,
       criticalImagesLoaded: PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => loadedImages.has(key)).length,
       criticalImagesDecoded: PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => decodedImages.has(key)).length,
       criticalGpuReady: criticalGpuReady.length,
-      criticalPendingPaths: pathsFor(['loading', 'idle']).concat(
+      criticalPendingPaths: pathsFor(['loading', 'loaded', 'decoded', 'idle']).concat(
         PAGE3_CRITICAL_IMAGE_KEYS
           .filter((key) => !status.has(key))
           .map((key) => config.assets[key]),
@@ -129,6 +135,10 @@ export function createPage3Preloader({ root, config, debug = false }) {
       requestCount,
       gpuReadyCount: gpuReady.size,
       currentLoadingPath,
+      currentStage,
+      failedStage: PAGE3_CRITICAL_IMAGE_KEYS
+        .map((key) => failedStages.get(key))
+        .find(Boolean) || '',
       currentModule: currentLoadingPath ? 'page3' : null,
       mobileAssets: Boolean(config.mobileAssets),
       status: new Map(status),
@@ -173,9 +183,10 @@ export function createPage3Preloader({ root, config, debug = false }) {
     const tracked = promise.then(
       (value) => {
         if (!destroyed && requestGeneration === generation) {
-          status.set(key, 'ready')
+          status.set(key, image ? 'decoded' : 'ready')
           if (image) {
             decodedImages.add(key)
+            stageProgress.set(key, Math.max(stageProgress.get(key) || 0, assetStageProgress('decoded')))
           }
           emit()
         }
@@ -186,6 +197,7 @@ export function createPage3Preloader({ root, config, debug = false }) {
         if (!destroyed && requestGeneration === generation) {
           const failureStatus = isTimeoutError(error) ? 'timedOut' : 'failed'
           status.set(key, failureStatus)
+          failedStages.set(key, currentStage || 'loading')
           errors.set(key, { path, message: error.message, status: failureStatus })
           settleGpuWaiters(key, error)
           emit()
@@ -203,17 +215,23 @@ export function createPage3Preloader({ root, config, debug = false }) {
   const loadImage = (key) => {
     if (promises.has(key)) return promises.get(key)
     const path = config.assets[key]
+    const requestPath = appendRetryQuery(path, retryCounts.get(key) || 0)
     const image = root.querySelector(`#${imageIdByKey.get(key)}`)
     status.set(key, 'loading')
-    currentLoadingPath = path
+    stageProgress.set(key, Math.max(stageProgress.get(key) || 0, assetStageProgress('loading')))
+    currentLoadingPath = requestPath
+    currentStage = 'loading'
     requestCount += 1
     emit()
     const requestGeneration = generation
-    return record(key, loadImageElement(image, path, () => {
+    return record(key, loadImageElement(image, requestPath, () => {
       if (requestGeneration !== generation) return
       loadedImages.add(key)
+      status.set(key, 'loaded')
+      currentStage = 'loaded'
+      stageProgress.set(key, Math.max(stageProgress.get(key) || 0, assetStageProgress('loaded')))
       emit()
-    }), path, {
+    }), requestPath, {
       image: true,
       requestGeneration,
     })
@@ -326,6 +344,8 @@ export function createPage3Preloader({ root, config, debug = false }) {
       promises.delete(key)
       status.delete(key)
       errors.delete(key)
+      stageProgress.set(key, 0)
+      failedStages.delete(key)
       gpuReady.delete(key)
       loadedImages.delete(key)
       decodedImages.delete(key)
@@ -353,11 +373,22 @@ export function createPage3Preloader({ root, config, debug = false }) {
     loadDragonAssets,
     loadClimaxAssets,
     loadDeferred,
+    startDeferred: loadDeferred,
     loadRealVideo,
     waitForGpuReady,
+    markGpuUploading(key) {
+      if (!imageIdByKey.has(key) || gpuReady.has(key)) return false
+      currentLoadingPath = config.assets[key]
+      currentStage = 'gpu'
+      emit()
+      return true
+    },
     markGpuReady(key, detail = null) {
       if (!imageIdByKey.has(key)) return false
       gpuReady.add(key)
+      status.set(key, 'gpuReady')
+      stageProgress.set(key, 1)
+      failedStages.delete(key)
       errors.delete(key)
       settleGpuWaiters(key)
       if (detail != null && debug) console.info(`[page3] GPU ready: ${key}`, detail)
@@ -368,6 +399,7 @@ export function createPage3Preloader({ root, config, debug = false }) {
       const failure = error instanceof Error ? error : new Error(String(error))
       gpuReady.delete(key)
       status.set(key, 'failed')
+      failedStages.set(key, 'gpu')
       errors.set(key, {
         path: config.assets[key],
         message: failure.message,
@@ -386,10 +418,20 @@ export function createPage3Preloader({ root, config, debug = false }) {
     retryFailed() {
       const failedKeys = [...errors.keys()]
       failedKeys.forEach((key) => {
+        retryCounts.set(key, (retryCounts.get(key) || 0) + 1)
         promises.delete(key)
         errors.delete(key)
         status.delete(key)
         gpuReady.delete(key)
+        failedStages.delete(key)
+        const id = imageIdByKey.get(key)
+        const image = id ? root.querySelector(`#${id}`) : null
+        if (image instanceof HTMLImageElement) {
+          image.removeAttribute('src')
+          image.removeAttribute('srcset')
+          delete image.dataset.loaded
+          delete image.dataset.sourceUrl
+        }
       })
       if (failedKeys.includes('realVideo')) realVideoPromise = null
       criticalPromise = null
@@ -419,6 +461,5 @@ export function createPage3Preloader({ root, config, debug = false }) {
   }
 
   sessions.set(root, session)
-  if (debug) window.page3Preloader = session
   return session
 }

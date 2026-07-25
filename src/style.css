@@ -272,33 +272,75 @@
   left: 50%;
   display: grid;
   justify-items: center;
-  gap: 10px;
-  width: min(330px, calc(100% - 40px));
+  gap: 11px;
+  width: min(340px, calc(100% - 36px));
   transform: translate(-50%, -50%);
-  padding: 20px;
-  border: 1px solid rgba(229, 174, 77, 0.62);
-  border-radius: 16px;
+  padding: 20px 20px 18px;
+  border: 1px solid rgba(211, 62, 35, 0.82);
+  outline: 1px solid rgba(235, 186, 84, 0.42);
+  outline-offset: -5px;
+  border-radius: 18px;
   color: #f8dda0;
-  background: rgba(35, 11, 7, 0.94);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  background: rgba(30, 13, 9, 0.94);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.58), 0 0 24px rgba(126, 35, 18, 0.2);
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 36px);
+  transition: opacity 240ms ease, transform 240ms ease;
 }
 
-.module-loading-overlay > strong { font-size: 17px; letter-spacing: 0.06em; }
-.module-loading-overlay > span { color: #e7b95e; font: 700 14px/1 system-ui, sans-serif; }
-.module-loading-overlay > i {
+.module-loading-title {
+  width: 100%;
+  color: #f2cd78;
+  font: 700 17px/1.35 "STKaiti", "KaiTi", "Noto Serif SC", serif;
+  letter-spacing: 0.05em;
+}
+.module-loading-overlay > p {
+  width: 100%;
+  margin: 0;
+  color: rgba(255, 228, 174, 0.82);
+  font: 500 13px/1.4 system-ui, sans-serif;
+}
+.module-loading-overlay > .module-loading-network-hint {
+  color: rgba(208, 176, 116, 0.82);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.module-loading-track {
   display: block;
   width: 100%;
-  height: 3px;
+  height: 5px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(255, 226, 163, 0.15);
 }
-.module-loading-overlay > i > b {
+.module-loading-track > b {
   display: block;
   width: 0;
   height: 100%;
   background: linear-gradient(90deg, #8f2d18, #e87a32, #f4ca69);
   transition: width 160ms ease;
+}
+.module-loading-overlay > small {
+  width: 100%;
+  min-height: 1.35em;
+  overflow: hidden;
+  color: rgba(239, 199, 118, 0.7);
+  font: 500 11px/1.35 system-ui, sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.module-loading-percentage {
+  width: 100%;
+  color: #e7b95e;
+  text-align: right;
+  font: 700 15px/1 system-ui, sans-serif;
+}
+.module-loading-overlay > code {
+  width: 100%;
+  max-height: 4.2em;
+  overflow: auto;
+  color: rgba(255, 222, 158, 0.68);
+  font: 10px/1.4 ui-monospace, Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 .module-loading-overlay button {
   min-height: 38px;
@@ -307,6 +349,15 @@
   border-radius: 999px;
   color: #ffe1a0;
   background: #6f2917;
+}
+.module-loading-overlay[hidden],
+.module-loading-overlay [hidden] {
+  display: none !important;
+}
+.module-loading-overlay.is-complete {
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 8px));
+  pointer-events: none;
 }
 
 .page1-ar:has(.page3-real-video-overlay:not([hidden])) > .module-header,
@@ -524,6 +575,9 @@ canvas {
   background: rgba(133, 32, 20, 0.92);
   font: 500 12px/1.45 ui-monospace, Consolas, monospace;
   overflow-wrap: anywhere;
+}
+.page1-ar > .layer-error {
+  display: none !important;
 }
 
 .debug-panel {

@@ -20,6 +20,24 @@ export class AssetTimeoutError extends Error {
 export const isTimeoutError = (error) =>
   error?.timedOut === true || error?.status === 'timedOut' || error?.name === 'AssetTimeoutError'
 
+export const ASSET_STAGE_PROGRESS = Object.freeze({
+  idle: 0,
+  loading: 0.05,
+  loaded: 0.4,
+  decoded: 0.6,
+  gpuReady: 1,
+})
+
+export const assetStageProgress = (stage, fallback = 0) =>
+  ASSET_STAGE_PROGRESS[stage] ?? fallback
+
+export const appendRetryQuery = (path, retryNumber = 0) => {
+  if (!retryNumber) return path
+  const url = new URL(path, document.baseURI)
+  url.searchParams.set('retry', String(retryNumber))
+  return url.href
+}
+
 export function withTimeout(promise, timeoutMs, message, path = '', onTimeout = null) {
   let timer = 0
   return Promise.race([
@@ -41,6 +59,7 @@ export async function loadImageElement(image, path, options = {}) {
     decodeTimeoutMs = ASSET_TIMEOUTS.imageDecodeMs,
     allowDecodeFallback = false,
     onLoaded = null,
+    onRequest = null,
   } = options
   if (!(image instanceof HTMLImageElement)) throw new Error(`缺少图片元素：${path}`)
   const targetUrl = new URL(path, document.baseURI).href
@@ -62,6 +81,7 @@ export async function loadImageElement(image, path, options = {}) {
       image.addEventListener('error', onError, { once: true })
       if (!sourceMatches || reloadFailedSource) {
         if (reloadFailedSource) image.removeAttribute('src')
+        onRequest?.(path)
         image.src = path
       }
       if (image.complete) {
@@ -161,7 +181,15 @@ export function createModuleAssetLoader({ modules = {}, onChange = null }) {
   Object.entries(modules).forEach(([moduleId, phases]) => {
     const tasks = new Map()
     Object.entries(phases).forEach(([phase, entries]) => {
-      ;(entries || []).forEach((entry) => tasks.set(entry.key, { ...entry, phase, status: 'idle', promise: null, error: null }))
+      ;(entries || []).forEach((entry) => tasks.set(entry.key, {
+        ...entry,
+        phase,
+        status: 'idle',
+        stage: 'idle',
+        progress: 0,
+        promise: null,
+        error: null,
+      }))
     })
     state.set(moduleId, { tasks })
   })
@@ -173,12 +201,21 @@ export function createModuleAssetLoader({ modules = {}, onChange = null }) {
     const ready = critical.filter((task) => task.status === 'ready').length
     const failed = critical.filter((task) => task.status === 'failed').length
     const timedOut = critical.filter((task) => task.status === 'timedOut').length
+    const criticalProgress = critical.length
+      ? critical.reduce((total, task) => total + task.progress, 0) / critical.length * 100
+      : 100
+    const currentTask = critical.find((task) => task.status === 'loading')
+      || critical.find((task) => ['failed', 'timedOut'].includes(task.status))
     return {
-      criticalProgress: critical.length ? (ready / critical.length) * 100 : 100,
+      criticalProgress,
       criticalReady: critical.length > 0 && ready === critical.length,
       criticalFailed: failed > 0 || timedOut > 0,
       criticalTimedOut: timedOut > 0,
+      currentAssetKey: currentTask?.key || '',
+      currentAssetPath: currentTask?.path || '',
+      currentStage: currentTask?.stage || (ready === critical.length ? 'gpuReady' : 'idle'),
       status: new Map(tasks.map((task) => [task.key, task.status])),
+      stages: new Map(tasks.map((task) => [task.key, task.stage])),
       errors: new Map(tasks.filter((task) => task.error).map((task) => [task.key, task.error])),
     }
   }
@@ -189,20 +226,35 @@ export function createModuleAssetLoader({ modules = {}, onChange = null }) {
     if (task.status === 'ready') return Promise.resolve(true)
     if (task.promise) return task.promise
     task.status = 'loading'
+    task.stage = 'loading'
+    task.progress = Math.max(task.progress, ASSET_STAGE_PROGRESS.loading)
     task.error = null
     emit(moduleId)
+    const reportStage = (stage) => {
+      task.stage = stage
+      task.progress = Math.max(task.progress, assetStageProgress(stage, task.progress))
+      emit(moduleId)
+    }
     task.promise = Promise.resolve()
-      .then(task.load)
+      .then(() => task.load?.(reportStage))
       .then(async () => {
+        reportStage('decoded')
         if (task.validate) await waitForMountedFrames(task.validate, task.frames ?? 2)
         task.status = 'ready'
+        task.stage = 'gpuReady'
+        task.progress = 1
         task.promise = null
         emit(moduleId)
         return true
       })
       .catch((error) => {
         task.status = isTimeoutError(error) ? 'timedOut' : 'failed'
-        task.error = { path: task.path, message: error?.message || String(error), status: task.status }
+        task.error = {
+          path: task.path,
+          message: error?.message || String(error),
+          status: task.status,
+          stage: task.stage,
+        }
         task.promise = null
         console.error(`[${moduleId}] 资源加载失败`, task.error)
         emit(moduleId)

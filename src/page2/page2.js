@@ -9,11 +9,11 @@ import {
   PAGE2_ASSET_ENTRIES,
   PAGE2_CRITICAL_IMAGE_KEYS,
   PAGE2_LATER_MAIN_KEYS,
-  startPage2CriticalPreload,
+  createPage2Preloader,
 } from './page2-preloader.js'
 import { PAGE2_CONFIG, PAGE2_STATES } from './page2-config.js'
 import { isTimeoutError, withTimeout } from '../module-asset-loader.js'
-import { getModuleEntryVisibility } from '../shared-module-ui.js'
+import { getModuleEntryVisibility, waitForFirstVisualFrame } from '../shared-module-ui.js'
 import {
   disposeAFrameImageTextures,
   prepareAFrameImageTexture,
@@ -204,17 +204,6 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
 }
 
 export const page2UiMarkup = (config, debug = false) => `
-  <section id="page2-loading-status" class="page2-loading-status" role="status" aria-live="polite">
-    <span class="page2-loading-emblem" aria-hidden="true"></span>
-    <div class="page2-loading-copy">
-      <strong>《龙脉铜梁》</strong>
-      <span>——铜梁火龙非遗AR互动体验设计</span>
-      <small data-page2-loading-detail>正在准备核心图景</small>
-    </div>
-    <div class="page2-loading-track" aria-hidden="true"><i data-page2-loading-progress></i></div>
-    <span data-page2-loading-count>${debug ? 'loaded 0｜decoded 0｜textures 0' : '0%'}</span>
-    <button type="button" data-page2-loading-retry hidden>资源加载失败，点击重试</button>
-  </section>
   <p class="page2-scan-guide" role="status">请缓慢平放识别图体验更佳</p>
   <section class="page2-ui" aria-label="龙脉探源 AR 界面">
     <header class="page2-title"><span>02</span><h1>龙脉探源</h1></header>
@@ -241,7 +230,6 @@ export const page2UiMarkup = (config, debug = false) => `
       <small>请扫描第三张识别图，进入火舞盛景</small>
     </section>
     <p class="page2-tracking-lost page2-glass-card" role="status" hidden>请重新对准第二页识别图</p>
-    <p class="page2-error page2-glass-card" role="alert" hidden></p>
   </section>
   ${debug ? `<aside class="page2-debug-panel" aria-label="第二页调试面板">
     <strong>Page 2 Debug</strong>
@@ -312,6 +300,8 @@ export function createPage2Experience({
   onTrackingFound,
   onTrackingLost,
   onEntryStateChange,
+  onAssetError,
+  onFirstVisualFrameReady,
 }) {
   const THREE = window.AFRAME.THREE
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
@@ -394,6 +384,8 @@ export function createPage2Experience({
     pendingEnter: false,
     moduleEntered: false,
     page2Entered: false,
+    foundationVisibleRequested: false,
+    firstVisualFrameReady: false,
     laterMainReady: false,
     laterFailedAssets: new Map(),
     visibleLayerCount: 0,
@@ -403,7 +395,7 @@ export function createPage2Experience({
     failedAssets: new Map(),
   }
 
-  const preloadSession = preloader || startPage2CriticalPreload({ root, config, debug })
+  const preloadSession = preloader || createPage2Preloader({ root, config, debug })
 
   const debugLog = (event, detail = '') => {
     if (debug) console.info(`[page2] ${event}`, detail)
@@ -481,8 +473,11 @@ export function createPage2Experience({
 
   const showError = (message) => {
     console.error(`[page2] ${message}`)
-    errorNotice.textContent = message
-    setHtmlVisible(errorNotice, true)
+    onAssetError?.({ message, stage: 'network' })
+    if (errorNotice) {
+      errorNotice.textContent = message
+      setHtmlVisible(errorNotice, true)
+    }
   }
 
   let particleSystem = null
@@ -608,6 +603,39 @@ export function createPage2Experience({
     return foundation.renderable
       && isLayerTextureRenderable('title')
       && isLayerTextureRenderable('mainBase')
+  }
+  const firstVisualEntities = [
+    backgroundPlane,
+    root.querySelector('#page2-floor-base'),
+    root.querySelector('[data-page2-asset-key="title"]'),
+    root.querySelector('[data-page2-asset-key="mainBase"]'),
+  ]
+  let firstVisualGatePromise = null
+  let firstVisualGateRunId = -1
+  const startFirstVisualFrameGate = () => {
+    if (page2Runtime.firstVisualFrameReady) return Promise.resolve(true)
+    const runId = page2Runtime.entranceRunId
+    if (firstVisualGatePromise && firstVisualGateRunId === runId) return firstVisualGatePromise
+    firstVisualGateRunId = runId
+    page2Runtime.foundationVisibleRequested = true
+    syncEntryUi()
+    firstVisualGatePromise = waitForFirstVisualFrame({
+      sceneEl: scene,
+      entities: firstVisualEntities,
+      isAnchorVisible: () => anchor?.object3D?.visible !== false,
+      isActive: () => !destroyed && !suspended && runId === page2Runtime.entranceRunId,
+      signal,
+    }).then((ready) => {
+      if (!ready || runId !== page2Runtime.entranceRunId) return false
+      page2Runtime.firstVisualFrameReady = true
+      markTiming('firstVisualFrameReady', { runId })
+      syncEntryUi()
+      onFirstVisualFrameReady?.({ targetIndex: 1, at: performance.now() })
+      return true
+    }).finally(() => {
+      if (firstVisualGateRunId === runId) firstVisualGatePromise = null
+    })
+    return firstVisualGatePromise
   }
   let overview
   const model = createPage2Model({
@@ -780,6 +808,10 @@ export function createPage2Experience({
 
   const resetPage2EntranceVisualState = () => {
     page2Runtime.entranceRunId += 1
+    page2Runtime.foundationVisibleRequested = false
+    page2Runtime.firstVisualFrameReady = false
+    firstVisualGatePromise = null
+    firstVisualGateRunId = -1
     page2Runtime.entranceStarted = false
     page2Runtime.entranceCompleted = false
     page2Runtime.trackingStable = false
@@ -998,6 +1030,7 @@ export function createPage2Experience({
       guideText.textContent = '请抬起手机，与识别图保持垂直'
       detectDepthDirection()
       maybeStartBackgroundTimeline()
+      startFirstVisualFrameGate()
       waitTwoAnimationFrames()
         .catch((error) => {
           console.warn('[page2] Render-frame confirmation timed out; using verified textures', error)
@@ -1134,6 +1167,7 @@ export function createPage2Experience({
       }
       debugLog('layerLoaded', { layerId: key, fileName: url.split('/').pop(), url: readyImage.currentSrc || readyImage.src })
       debugLog('layerDecoded', { layerId: key, fileName: url.split('/').pop(), url: readyImage.currentSrc || readyImage.src })
+      preloadSession.markTextureUploading?.(key)
       const prepared = await bindReadyImage(id, key, readyImage, bindingGeneration)
       if (!prepared) return { key, status: 'cancelled', url }
       if (bindingGeneration !== assetBindingGeneration) {
@@ -1164,8 +1198,10 @@ export function createPage2Experience({
       bindingPromises.delete(key)
       console.error('[page2] Asset failed', { layerId: key, fileName: url?.split('/').pop(), url, error })
       if (tracked && !isLaterMainAsset) {
-        errorNotice.textContent = '部分可视化资源加载失败，请重新扫描'
-        setHtmlVisible(errorNotice, true)
+        if (errorNotice) {
+          errorNotice.textContent = '部分可视化资源加载失败，请重新扫描'
+          setHtmlVisible(errorNotice, true)
+        }
       }
       updateAssetReadiness()
       throw error
@@ -1283,9 +1319,6 @@ export function createPage2Experience({
     maybeStartPage2Entrance()
     return preloadSession.getSnapshot()
   }
-
-  const loadingRetryButton = root.querySelector('[data-page2-loading-retry]')
-  if (loadingRetryButton) loadingRetryButton.onclick = () => retryCriticalAssets()
 
   const unsubscribePreload = preloadSession.subscribe((snapshot) => {
     page2Runtime.resourcesLoaded = snapshot.resourcesLoaded
@@ -1731,6 +1764,13 @@ export function createPage2Experience({
 
   return {
     startAssetLoading,
+    startCritical: startAssetLoading,
+    startDeferred: startLaterMainLoading,
+    retryFailed: retryCriticalAssets,
+    syncTracked(isTracked) {
+      if (isTracked && !tracked) activate({ replay: page2Runtime.replayArmed })
+      else if (!isTracked && tracked) loseTracking()
+    },
     notifySceneLoaded(at = performance.now()) {
       markTiming('sceneLoaded', null, at)
     },

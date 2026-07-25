@@ -18,6 +18,7 @@ export function createStableAnchorController({
   config,
   onUpdate,
   onFirstValidTransform,
+  onVisibleChange,
   externalTick = false,
 }) {
   const THREE = window.AFRAME.THREE
@@ -45,6 +46,7 @@ export function createStableAnchorController({
     anchorVisible = visible
     anchor.object3D.visible = visible
     anchor.setAttribute('visible', visible)
+    onVisibleChange?.(visible)
   }
 
   const readRawTransform = () => {

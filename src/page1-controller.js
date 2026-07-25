@@ -83,6 +83,14 @@ export function initializePage1Controller({
 
   if (shouldReset) progress.clearCompletion()
 
+  const craftImageElements = new Map(
+    config.assets.craftLayers.map((layer) => [
+      layer.path,
+      root.querySelector(`#explode-${layer.id}`),
+    ]),
+  )
+  craftImageElements.set(config.assets.colorMask, root.querySelector('#page1-color-mask-asset'))
+
   const renderer = createCraftRenderer({
     canvas,
     plane: craftPlane,
@@ -100,6 +108,9 @@ export function initializePage1Controller({
     canvasHints: Boolean(arBridge),
     hintConfig: { ...config.interactionHints, paintRadius: config.paintBrush.radius },
     eyeHotspot: config.eyeHotspot,
+    imageElements: craftImageElements,
+    onImageLoadAttempt: (path) => arBridge?.onImageLoadAttempt?.(path),
+    onAssetError: (failure) => arBridge?.onAssetError?.(failure),
   })
   const audio = createAudioController({
     paths: {
@@ -108,17 +119,6 @@ export function initializePage1Controller({
       complete: config.assets.completeAudio,
     },
     errorOutput,
-  })
-
-  root.querySelectorAll('a-assets img').forEach((image) => {
-    image.addEventListener(
-      'error',
-      () => {
-        errorOutput.textContent = `图片加载失败：${image.getAttribute('src')}`
-        errorOutput.hidden = false
-      },
-      { signal },
-    )
   })
 
   const armScheduled = (record) => {
@@ -624,7 +624,7 @@ export function initializePage1Controller({
     root.querySelector('.craft-annotations').hidden = true
     showExplodeUi(false)
     renderer.renderBamboo(0, 1)
-    errorOutput.hidden = true
+    if (errorOutput) errorOutput.hidden = true
     arBridge?.restartOpening?.()
     trackingPaused = Boolean(arBridge)
     transition(PAGE1_STATES.LINEART, { resetStamps: true })

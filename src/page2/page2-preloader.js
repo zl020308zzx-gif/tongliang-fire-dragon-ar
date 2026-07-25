@@ -1,4 +1,6 @@
 import {
+  appendRetryQuery,
+  assetStageProgress,
   isTimeoutError,
   loadImageElement,
   withTimeout,
@@ -84,7 +86,7 @@ const timingDifference = (events, from, to) => (
     : null
 )
 
-export function startPage2CriticalPreload({ root, config, debug = false }) {
+export function createPage2Preloader({ root, config, debug = false }) {
   const existing = sessions.get(root)
   const currentBackgroundImage = root.querySelector('#page2-background-asset')
   if (existing?.rootImage === currentBackgroundImage) return existing
@@ -93,6 +95,9 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   const imagePromises = new Map()
   const decodedImages = new Map()
   const status = new Map(PAGE2_ASSET_ENTRIES.map(([, key]) => [key, 'deferred']))
+  const stageProgress = new Map(PAGE2_ASSET_ENTRIES.map(([, key]) => [key, 0]))
+  const retryCounts = new Map()
+  const failedStages = new Map()
   const listeners = new Set()
   const loadedCriticalImages = new Set()
   const decodedCriticalImages = new Set()
@@ -114,6 +119,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   let phaseMessage = ''
   let destroyed = false
   let currentLoadingPath = ''
+  let currentStage = 'idle'
   let generation = 0
   const entryState = {
     targetFound: false,
@@ -162,7 +168,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     const criticalImageTotal = PAGE2_CRITICAL_IMAGE_KEYS.length
     const criticalTotal = criticalImageTotal
     const criticalCompleted = PAGE2_CRITICAL_IMAGE_KEYS.filter((key) => gpuReady.has(key)).length
-    const criticalProgress = Math.min(100, (criticalCompleted / criticalTotal) * 100)
+    const criticalProgress = Math.min(100, PAGE2_CRITICAL_IMAGE_KEYS
+      .reduce((total, key) => total + (stageProgress.get(key) || 0), 0) / criticalTotal * 100)
     const criticalReady = decodedCriticalImages.size === criticalImageTotal
       && criticalCompleted === criticalImageTotal
     const criticalFailed = PAGE2_CRITICAL_IMAGE_KEYS
@@ -198,6 +205,10 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       criticalTexturesReady: criticalCompleted,
       gpuReadyCount: gpuReady.size,
       currentLoadingPath,
+      currentStage,
+      failedStage: PAGE2_CRITICAL_IMAGE_KEYS
+        .map((key) => failedStages.get(key))
+        .find(Boolean) || '',
       currentModule: entryState.targetFound ? 'page2' : null,
       mobileAssets: Boolean(config.mobileAssets),
       targetReady,
@@ -214,44 +225,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     }
   }
 
-  const updateLoadingUi = (current) => {
-    const panel = root.querySelector('#page2-loading-status')
-    if (!panel) return
-    const loadingVisible = entryState.targetFound
-      && entryState.pendingEnter
-      && !entryState.moduleEntered
-    if (uiDismissed || !loadingVisible) {
-      panel.hidden = true
-      return
-    }
-    panel.querySelector('.page2-loading-copy strong').textContent = '正在加载《龙脉探源》'
-    panel.querySelector('.page2-loading-copy span').textContent = '核心资源就绪后将自动进入'
-    const detail = panel.querySelector('[data-page2-loading-detail]')
-    const progress = panel.querySelector('[data-page2-loading-progress]')
-    const count = panel.querySelector('[data-page2-loading-count]')
-    if (phaseMessage) detail.textContent = phaseMessage
-    else if (
-      current.targetReady &&
-      current.criticalImagesDecoded === current.criticalImageTotal &&
-      current.criticalTexturesReady < current.criticalImageTotal
-    ) detail.textContent = '正在建立AR场景……'
-    else if (current.criticalReady) detail.textContent = '核心图景已准备，请对准第二页识别图'
-    else if (current.failedCount > 0 || current.targetFailed) detail.textContent = '部分核心资源准备失败，正在使用可用内容'
-    else detail.textContent = '正在准备核心图景'
-    progress.style.width = `${current.criticalProgress.toFixed(1)}%`
-    count.textContent = debug
-      ? `loaded ${current.loadedCount}｜decoded ${current.decodedCount}｜textures ${current.criticalTexturesReady}`
-      : `${Math.round(current.criticalProgress)}%`
-    panel.dataset.status = current.criticalReady ? 'ready' : 'loading'
-    panel.querySelector('[data-page2-loading-retry]').hidden = !current.criticalFailed
-    panel.classList.remove('is-complete')
-    panel.hidden = false
-    if (debug) panel.title = JSON.stringify(current.timing)
-  }
-
   const emit = () => {
     const current = snapshot()
-    updateLoadingUi(current)
     listeners.forEach((listener) => listener(current))
   }
 
@@ -272,21 +247,26 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     const entry = PAGE2_ASSET_ENTRIES.find(([, assetKey]) => assetKey === key)
     const img = entry ? root.querySelector(`#${entry[0]}`) : null
     const url = config.assets[key]
+    const requestUrl = appendRetryQuery(url, retryCounts.get(key) || 0)
     const promise = (async () => {
       const loadStartedAt = performance.now()
       if (!(img instanceof HTMLImageElement)) throw new Error(`[page2] Missing image element: ${url}`)
       requestedCount += 1
-      currentLoadingPath = url
+      currentLoadingPath = requestUrl
+      currentStage = 'loading'
       status.set(key, 'loading')
+      stageProgress.set(key, Math.max(stageProgress.get(key) || 0, assetStageProgress('loading')))
       emit()
       try {
         let loadRecorded = false
-        const ready = await loadAndDecodeImage(img, url, () => {
+        const ready = await loadAndDecodeImage(img, requestUrl, () => {
           if (loadRecorded) return
           loadRecorded = true
           if (requestGeneration === generation) {
             loadedCount += 1
-            status.set(key, 'decoding')
+            status.set(key, 'loaded')
+            currentStage = 'loaded'
+            stageProgress.set(key, Math.max(stageProgress.get(key) || 0, assetStageProgress('loaded')))
             if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) loadedCriticalImages.add(key)
             evaluateCriticalMilestones()
             emit()
@@ -296,6 +276,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
         decodedCount += 1
         decodedImages.set(key, ready)
         status.set(key, 'decoded')
+        currentStage = 'decoded'
+        stageProgress.set(key, Math.max(stageProgress.get(key) || 0, assetStageProgress('decoded')))
         if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) decodedCriticalImages.add(key)
         evaluateCriticalMilestones()
         emit()
@@ -312,6 +294,7 @@ height: ${ready.naturalHeight}`)
         if (requestGeneration === generation) {
           failedCount += 1
           failedKeys.add(key)
+          failedStages.set(key, currentStage || 'loading')
           status.set(key, isTimeoutError(error) ? 'timedOut' : 'failed')
           emit()
         }
@@ -324,7 +307,8 @@ error: ${error?.message || String(error)}`, error)
         console.error('[page2] Preload failed', { key, url, error })
         throw error
       } finally {
-        if (requestGeneration === generation && currentLoadingPath === url) currentLoadingPath = ''
+        if (requestGeneration === generation && currentLoadingPath === requestUrl) currentLoadingPath = ''
+        if (requestGeneration === generation) currentStage = ''
         if (requestGeneration === generation) emit()
       }
     })()
@@ -378,8 +362,18 @@ rejected数量: ${rejectedAssets.length}
       if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key) || gpuReady.has(key)) return false
       gpuReady.add(key)
       status.set(key, 'ready')
+      stageProgress.set(key, 1)
+      currentStage = 'gpuReady'
+      failedStages.delete(key)
       maxTextureUploadMs = Math.max(maxTextureUploadMs, Number.isFinite(uploadMs) ? uploadMs : 0)
       evaluateCriticalMilestones()
+      emit()
+      return true
+    },
+    markTextureUploading(key) {
+      if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key) || gpuReady.has(key)) return false
+      currentLoadingPath = config.assets[key]
+      currentStage = 'gpu'
       emit()
       return true
     },
@@ -387,6 +381,8 @@ rejected数量: ${rejectedAssets.length}
       if (gpuReady.has(key)) return false
       gpuReady.add(key)
       status.set(key, 'ready')
+      stageProgress.set(key, 1)
+      failedStages.delete(key)
       maxTextureUploadMs = Math.max(maxTextureUploadMs, Number.isFinite(uploadMs) ? uploadMs : 0)
       evaluateCriticalMilestones()
       emit()
@@ -398,6 +394,7 @@ rejected数量: ${rejectedAssets.length}
       gpuReady.delete(key)
       status.set(key, failureStatus)
       failedKeys.add(key)
+      failedStages.set(key, 'gpu')
       failedCount += 1
       emit()
       console.error(`PAGE2 ASSET FAILED:
@@ -431,6 +428,14 @@ ${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).joi
       if (entryState.pendingEnter) uiDismissed = false
       emit()
     },
+    startDeferred() {
+      if (session.deferredPromise) return session.deferredPromise
+      const deferredQueue = PAGE2_ASSET_ENTRIES
+        .map(([, key]) => key)
+        .filter((key) => !PAGE2_CRITICAL_IMAGE_KEYS.includes(key))
+      session.deferredPromise = runQueue(deferredQueue).then(() => snapshot())
+      return session.deferredPromise
+    },
     resetImageForRetry(key) {
       if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) return false
       imagePromises.delete(key)
@@ -442,15 +447,7 @@ ${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).joi
       return true
     },
     hideLoading() {
-      const panel = root.querySelector('#page2-loading-status')
       uiDismissed = true
-      if (!panel) return
-      panel.classList.add('is-complete')
-      const timer = window.setTimeout(() => {
-        timers.delete(timer)
-        if (uiDismissed) panel.hidden = true
-      }, 320)
-      timers.add(timer)
     },
     subscribe(listener) {
       listeners.add(listener)
@@ -459,18 +456,29 @@ ${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).joi
     },
     criticalPromise: null,
     promise: null,
+    deferredPromise: null,
     concurrency: maxConcurrency,
     retryFailed() {
       const retryQueue = [...failedKeys]
       if (!retryQueue.length) return Promise.resolve(snapshot())
       retryQueue.forEach((key) => {
+        retryCounts.set(key, (retryCounts.get(key) || 0) + 1)
         failedKeys.delete(key)
+        failedStages.delete(key)
         imagePromises.delete(key)
         decodedImages.delete(key)
         loadedCriticalImages.delete(key)
         decodedCriticalImages.delete(key)
         gpuReady.delete(key)
         status.set(key, 'deferred')
+        const entry = PAGE2_ASSET_ENTRIES.find(([, entryKey]) => entryKey === key)
+        const image = entry ? root.querySelector(`#${entry[0]}`) : null
+        if (image instanceof HTMLImageElement) {
+          image.removeAttribute('src')
+          image.removeAttribute('srcset')
+          delete image.dataset.loaded
+          delete image.dataset.sourceUrl
+        }
       })
       failedCount = Math.max(0, failedCount - retryQueue.length)
       phaseMessage = '正在重试失败资源'
@@ -491,6 +499,8 @@ ${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).joi
         decodedCriticalImages.delete(key)
         gpuReady.delete(key)
         status.set(key, 'deferred')
+        stageProgress.set(key, 0)
+        failedStages.delete(key)
         const entry = PAGE2_ASSET_ENTRIES.find(([, entryKey]) => entryKey === key)
         const image = entry ? root.querySelector(`#${entry[0]}`) : null
         if (image instanceof HTMLImageElement) {
@@ -502,6 +512,7 @@ ${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).joi
         session.criticalPromise = null
         session.promise = null
       }
+      session.deferredPromise = null
       emit()
     },
     destroy() {
@@ -513,10 +524,8 @@ ${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).joi
   }
 
   sessions.set(root, session)
-  const retryButton = root.querySelector('[data-page2-loading-retry]')
-  if (retryButton) retryButton.onclick = () => session.retryFailed()
-  emit()
   return session
 }
 
-export const startPage2Preload = startPage2CriticalPreload
+export const startPage2CriticalPreload = createPage2Preloader
+export const startPage2Preload = createPage2Preloader
