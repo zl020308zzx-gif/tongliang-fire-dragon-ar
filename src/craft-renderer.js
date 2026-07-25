@@ -8,6 +8,7 @@ function createSizedCanvas(width, height) {
 }
 
 export function createCraftRenderer({
+  scene,
   canvas,
   plane,
   layers,
@@ -40,7 +41,9 @@ export function createCraftRenderer({
   const statisticsValidCanvas = createSizedCanvas(statisticsSize, statisticsSize)
   const statisticsValidContext = statisticsValidCanvas.getContext('2d')
   const imageCache = new Map()
-  const textureRetryFrames = new Set()
+  const configuredTextures = new WeakSet()
+  let textureRefreshFrame = null
+  let textureRefreshAttempts = 0
   let validStatisticsPixels = null
   let validPixelCount = 0
   let overlayState = {
@@ -92,30 +95,43 @@ export function createCraftRenderer({
     if (typeof plane.getObject3D !== 'function') return false
     const mesh = plane.getObject3D('mesh')
     if (!mesh) return false
+    const THREE = window.AFRAME?.THREE
+    const webglRenderer = scene?.renderer
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     let refreshed = false
     materials.forEach((material) => {
-      if (material?.map) {
-        material.map.needsUpdate = true
-        refreshed = true
+      const texture = material?.map
+      if (!texture) return
+      if (THREE && !configuredTextures.has(texture)) {
+        texture.generateMipmaps = false
+        texture.minFilter = THREE.LinearFilter
+        texture.magFilter = THREE.LinearFilter
+        texture.wrapS = THREE.ClampToEdgeWrapping
+        texture.wrapT = THREE.ClampToEdgeWrapping
+        configuredTextures.add(texture)
       }
+      texture.needsUpdate = true
+      try {
+        webglRenderer?.initTexture?.(texture)
+      } catch {
+        texture.needsUpdate = true
+      }
+      refreshed = true
     })
     return refreshed
   }
 
   const requestTextureRefresh = () => {
-    if (refreshTexture()) return
-    let attempts = 0
-    const retry = () => {
-      attempts += 1
-      textureRetryFrames.delete(frameId)
-      if (!refreshTexture() && attempts < 60) {
-        frameId = requestAnimationFrame(retry)
-        textureRetryFrames.add(frameId)
+    if (textureRefreshFrame !== null) return
+    textureRefreshAttempts = 0
+    const upload = () => {
+      textureRefreshFrame = null
+      textureRefreshAttempts += 1
+      if (!refreshTexture() && textureRefreshAttempts < 60) {
+        textureRefreshFrame = requestAnimationFrame(upload)
       }
     }
-    let frameId = requestAnimationFrame(retry)
-    textureRetryFrames.add(frameId)
+    textureRefreshFrame = requestAnimationFrame(upload)
   }
 
   const drawCanvasHints = () => {
@@ -493,8 +509,10 @@ export function createCraftRenderer({
       present()
     },
     destroy() {
-      textureRetryFrames.forEach(cancelAnimationFrame)
-      textureRetryFrames.clear()
+      if (textureRefreshFrame !== null) {
+        cancelAnimationFrame(textureRefreshFrame)
+        textureRefreshFrame = null
+      }
     },
   }
 }
