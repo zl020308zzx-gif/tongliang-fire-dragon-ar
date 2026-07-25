@@ -1,6 +1,6 @@
 import { assetUrl } from '../asset-url.js'
 import { SHARED_FOLDOUT_LAYOUT, cloneVector } from '../shared-foldout-layout.js'
-import { IS_IOS_MOBILE, selectPageImageRoot } from '../platform-assets.js'
+import { IS_MOBILE_DEVICE, selectPageImageRoot } from '../platform-assets.js'
 
 const page3Asset = (path) => assetUrl(`assets/page3/${path}`)
 const page3ImageRoot = selectPageImageRoot('page3', 'page3-mobile')
@@ -30,14 +30,14 @@ export const PAGE3_STATES = Object.freeze({
 })
 
 export const PAGE3_CONFIG = {
-  mobileAssets: IS_IOS_MOBILE,
+  mobileAssets: IS_MOBILE_DEVICE,
   targetIndex: 2,
   markerAspect,
   targets: assetUrl('assets/markers/targets.mind'),
   markerImage: assetUrl('assets/markers/marker-page3.png'),
   assets: {
-    background: page3ImageAsset('background/page3-bg-board.png'),
-    floor: page3ImageAsset('background/page3-floor-base.png'),
+    background: page3ImageAsset('background/page3-bg-board.jpg'),
+    floor: page3ImageAsset('background/page3-floor-base.jpg'),
     cloudBack: page3ImageAsset('clouds/page3-cloud-back.png'),
     cloudMiddle: page3ImageAsset('clouds/page3-cloud-middle.png'),
     cloudFront: page3ImageAsset('clouds/page3-cloud-front.png'),

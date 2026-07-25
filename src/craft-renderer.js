@@ -1,3 +1,5 @@
+import { loadImageElement } from './module-asset-loader.js'
+
 function createSizedCanvas(width, height) {
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -19,6 +21,9 @@ export function createCraftRenderer({
   canvasHints = false,
   hintConfig = null,
   eyeHotspot = null,
+  imageElements = null,
+  onImageLoadAttempt = null,
+  onAssetError = null,
 }) {
   const context = canvas.getContext('2d')
   const baseCanvas = createSizedCanvas(canvas.width, canvas.height)
@@ -52,24 +57,32 @@ export function createCraftRenderer({
   const getLayer = (layerId) => layers.find((item) => item.id === layerId)
 
   const showError = (kind, path) => {
-    errorOutput.textContent = `${kind}加载失败：${path}`
-    errorOutput.hidden = false
+    onAssetError?.({ kind, path, stage: 'network' })
+    if (errorOutput) {
+      errorOutput.textContent = `${kind}加载失败：${path}`
+      errorOutput.hidden = false
+    }
   }
 
   const clearError = () => {
-    errorOutput.textContent = ''
-    errorOutput.hidden = true
+    if (errorOutput) {
+      errorOutput.textContent = ''
+      errorOutput.hidden = true
+    }
   }
 
   const loadImage = (path) => {
     if (imageCache.has(path)) return imageCache.get(path)
 
-    const imagePromise = new Promise((resolve, reject) => {
-      const image = new Image()
-      image.draggable = false
-      image.onload = () => resolve(image)
-      image.onerror = () => reject(new Error(path))
-      image.src = path
+    const sharedImage = imageElements?.get?.(path)
+    const image = sharedImage instanceof HTMLImageElement ? sharedImage : new Image()
+    image.draggable = false
+    const imagePromise = loadImageElement(image, path, {
+      allowDecodeFallback: true,
+      onRequest: () => onImageLoadAttempt?.(path),
+    }).catch((error) => {
+      imageCache.delete(path)
+      throw error
     })
     imageCache.set(path, imagePromise)
     return imagePromise

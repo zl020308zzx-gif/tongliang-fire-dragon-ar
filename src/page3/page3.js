@@ -10,7 +10,7 @@ import {
 } from './page3-config.js'
 import { createPage3Effects } from './page3-effects.js'
 import { createPage3Preloader } from './page3-preloader.js'
-import { getModuleEntryVisibility } from '../shared-module-ui.js'
+import { getModuleEntryVisibility, waitForFirstVisualFrame } from '../shared-module-ui.js'
 import {
   disposeAFrameImageTextures,
   prepareAFrameImageTexture,
@@ -230,11 +230,6 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
       <strong>请将第三页识别卡平放在桌面</strong>
       <span>保持手机斜向观察，立体舞台即将展开</span>
     </section>
-    <section class="page3-loading page3-glass-card" role="status" hidden>
-      <strong>正在加载《火舞夜空》</strong>
-      <span data-page3-loading-text>正在准备火舞舞台</span>
-      <small data-page3-loading-progress>0%</small>
-    </section>
     <section class="page3-step-card page3-glass-card" hidden>
       <span data-page3-step-number>01</span>
       <div><h2 data-page3-step-title>擂鼓起势</h2><p data-page3-step-description>${PAGE3_CONTENT.ready.description}</p></div>
@@ -249,11 +244,6 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
         <button type="button" data-page3-action="restart">重新体验</button>
         <button type="button" data-page3-action="real-video">观看真实铜梁火龙表演</button>
       </div>
-    </section>
-    <p class="page3-tracking-lost page3-glass-card" role="status" hidden>请重新对准第三页识别卡</p>
-    <section class="page3-error page3-glass-card" role="alert" hidden>
-      <span data-page3-error-text></span>
-      <button type="button" data-page3-action="retry">重新加载</button>
     </section>
   </section>
   <section class="page3-real-video-overlay" hidden>
@@ -356,6 +346,8 @@ export function createPage3Experience({
   onTrackingFound,
   onTrackingLost,
   onEntryStateChange,
+  onAssetError,
+  onFirstVisualFrameReady,
 }) {
   registerPage3Runtime()
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
@@ -394,16 +386,16 @@ export function createPage3Experience({
   const completeScreen = root.querySelector('.page3-complete-screen')
   const ui = root.querySelector('.page3-ui')
   const placementGuide = root.querySelector('.page3-placement-guide')
-  const loading = root.querySelector('.page3-loading')
-  const loadingText = root.querySelector('[data-page3-loading-text]')
-  const loadingProgress = root.querySelector('[data-page3-loading-progress]')
+  const loading = { hidden: true }
+  const loadingText = { textContent: '' }
+  const loadingProgress = { textContent: '' }
   const stepCard = root.querySelector('.page3-step-card')
   const progress = root.querySelector('.page3-progress')
   const prompt = root.querySelector('.page3-drum-prompt')
   const endOptions = root.querySelector('.page3-end-options')
-  const lostNotice = root.querySelector('.page3-tracking-lost')
-  const errorNotice = root.querySelector('.page3-error')
-  const errorText = root.querySelector('[data-page3-error-text]')
+  const lostNotice = { hidden: true }
+  const errorNotice = { hidden: true }
+  const errorText = { textContent: '' }
   const effects = createPage3Effects({ root, config })
   const THREE = window.AFRAME.THREE
   const gpuReadyAssets = new Set()
@@ -463,6 +455,10 @@ export function createPage3Experience({
   let pendingEnter = false
   let moduleEntered = false
   let page3Entered = false
+  let foundationVisibleRequested = false
+  let firstVisualFrameReady = false
+  let firstVisualGatePromise = null
+  let firstVisualGateGeneration = 0
   let tryEnterPage3 = () => false
 
   const syncEntryUi = () => {
@@ -497,6 +493,7 @@ export function createPage3Experience({
 
   const showError = (message) => {
     console.error(`[page3] ${message}`)
+    onAssetError?.({ message, stage: 'network' })
     errorText.textContent = message
     errorNotice.hidden = false
   }
@@ -683,7 +680,7 @@ export function createPage3Experience({
 
   const bindReadyAssets = (snapshot) => {
     PAGE3_IMAGE_ENTRIES.forEach(([id, key]) => {
-      if (snapshot.status.get(key) !== 'ready') return
+      if (!['decoded', 'gpuReady'].includes(snapshot.status.get(key))) return
       root.querySelectorAll(`[data-page3-asset-key="${key}"]`).forEach((entity) => {
         if (entity.dataset.page3Bound === 'true') return
         setVisible(entity, false)
@@ -696,7 +693,7 @@ export function createPage3Experience({
     deferredSettled = snapshot.deferredSettled
     loadingProgress.textContent = `${Math.round(snapshot.criticalProgress || 0)}%`
     stageAssetsReady = ['stageFront', 'stageLights', 'pearl', 'drumSfx']
-      .every((key) => snapshot.status.get(key) === 'ready')
+      .every((key) => ['ready', 'gpuReady'].includes(snapshot.status.get(key)))
     dragonReady = snapshot.status.get('dragonVideo') === 'ready'
     ironflowerReady = snapshot.status.get('ironflowerVideo') === 'ready'
     const failedPaths = [...snapshot.errors.values()].map((failure) => failure.path)
@@ -736,6 +733,7 @@ export function createPage3Experience({
     const binding = gpuBindingChain
       .catch(() => {})
       .then(async () => {
+        preloaderSession.markGpuUploading?.(key)
         const prepared = await prepareAFrameImageTexture({
           scene,
           entities,
@@ -812,7 +810,7 @@ export function createPage3Experience({
 
   const bindGpuReadyAssets = (snapshot) => {
     PAGE3_IMAGE_ENTRIES.forEach(([id, key]) => {
-      if (snapshot.status.get(key) === 'ready' && !gpuReadyAssets.has(key)) {
+      if (snapshot.status.get(key) === 'decoded' && !gpuReadyAssets.has(key)) {
         queueTextureBinding(id, key)
       }
     })
@@ -820,7 +818,7 @@ export function createPage3Experience({
     deferredSettled = snapshot.deferredSettled
     loadingProgress.textContent = `${Math.round(snapshot.criticalProgress || 0)}%`
     stageAssetsReady = PAGE3_DEFERRED_IMAGE_KEYS.every(
-      (key) => snapshot.status.get(key) === 'ready' && snapshot.gpuReady.has(key),
+      (key) => snapshot.gpuReady.has(key),
     )
     dragonReady = snapshot.status.get('dragonVideo') === 'ready'
     ironflowerReady = snapshot.status.get('ironflowerVideo') === 'ready'
@@ -1355,6 +1353,31 @@ export function createPage3Experience({
     effects.clear()
   }
 
+  const startFirstVisualFrameGate = () => {
+    if (firstVisualFrameReady) return Promise.resolve(true)
+    if (firstVisualGatePromise) return firstVisualGatePromise
+    const gateGeneration = firstVisualGateGeneration
+    foundationVisibleRequested = true
+    syncEntryUi()
+    firstVisualGatePromise = waitForFirstVisualFrame({
+      sceneEl: scene,
+      entities: [background, floor, title, drumPlane],
+      isAnchorVisible: () => anchor?.object3D?.visible !== false,
+      isActive: () => !destroyed && !suspended && gateGeneration === firstVisualGateGeneration,
+      signal,
+    }).then((ready) => {
+      if (!ready || gateGeneration !== firstVisualGateGeneration) return false
+      firstVisualFrameReady = true
+      preloaderSession.markTiming?.('firstVisualFrameReady')
+      syncEntryUi()
+      onFirstVisualFrameReady?.({ targetIndex: 2, at: performance.now() })
+      return true
+    }).finally(() => {
+      if (gateGeneration === firstVisualGateGeneration) firstVisualGatePromise = null
+    })
+    return firstVisualGatePromise
+  }
+
   const updateStepUi = () => {
     const content = contentForState(state)
     root.querySelector('[data-page3-step-number]').textContent = content.number
@@ -1518,6 +1541,10 @@ export function createPage3Experience({
     }
 
     if (state === PAGE3_STATES.LOADING) {
+      firstVisualGateGeneration += 1
+      firstVisualGatePromise = null
+      foundationVisibleRequested = false
+      firstVisualFrameReady = false
       loadingText.textContent = '正在唤醒火龙舞台……'
       criticalRenderableFrames = 0
       criticalGateOpened = false
@@ -1532,6 +1559,7 @@ export function createPage3Experience({
       placementGuide.hidden = true
       foundationRenderFrames = config.foundation.readyRenderFrames
       foundationReady = true
+      startFirstVisualFrameGate()
       preloaderSession.markTiming?.('firstFoundationVisible', {
         gpuReadyCount: gpuReadyAssets.size,
       })
@@ -2170,7 +2198,16 @@ export function createPage3Experience({
       },
       next: nextDebugState,
       reset: resetPage3,
-      getState: () => ({ state, tracked, drumEnabled, drumHitCount, criticalReady, deferredSettled }),
+      getState: () => ({
+        state,
+        tracked,
+        drumEnabled,
+        drumHitCount,
+        criticalReady,
+        deferredSettled,
+        foundationVisibleRequested,
+        firstVisualFrameReady,
+      }),
     }
   }
 
@@ -2185,6 +2222,19 @@ export function createPage3Experience({
   return {
     startAssetLoading() {
       return preloaderSession.startCritical()
+    },
+    startCritical() {
+      return preloaderSession.startCritical()
+    },
+    startDeferred() {
+      return preloaderSession.startDeferred()
+    },
+    retryFailed() {
+      return preloaderSession.retryFailed()
+    },
+    syncTracked(isTracked) {
+      if (isTracked && !tracked) activate()
+      else if (!isTracked && tracked) loseTracking()
     },
     notifySceneLoaded(at = performance.now()) {
       preloaderSession.markTiming?.('sceneLoaded', null, at)
@@ -2209,6 +2259,10 @@ export function createPage3Experience({
         setVisible(anchor, false)
       }
       releasePage3ImageTextures()
+      firstVisualGateGeneration += 1
+      firstVisualGatePromise = null
+      foundationVisibleRequested = false
+      firstVisualFrameReady = false
       pendingEnter = false
       moduleEntered = false
       page3Entered = false
@@ -2225,6 +2279,8 @@ export function createPage3Experience({
       pendingEnter,
       moduleEntered,
       page3Entered,
+      foundationVisibleRequested,
+      firstVisualFrameReady,
       preload: preloaderSession.getSnapshot(),
       performanceVideoSource: config.platform.performanceVideoSource,
       performanceMaterialType: config.platform.performanceMaterialType,

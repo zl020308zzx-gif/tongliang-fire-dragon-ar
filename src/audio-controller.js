@@ -4,8 +4,10 @@ export function createAudioController({ paths, errorOutput }) {
       const audio = new Audio(path)
       audio.preload = 'auto'
       audio.addEventListener('error', () => {
-        errorOutput.textContent = `音频加载失败：${path}`
-        errorOutput.hidden = false
+        if (errorOutput) {
+          errorOutput.textContent = `音频加载失败：${path}`
+          errorOutput.hidden = false
+        }
       })
       return [name, { audio, path }]
     }),
@@ -28,12 +30,16 @@ export function createAudioController({ paths, errorOutput }) {
     entry.audio.currentTime = 0
     try {
       entry.audio.play()?.catch(() => {
-        errorOutput.textContent = `音频播放失败：${entry.path}`
-        errorOutput.hidden = false
+        if (errorOutput) {
+          errorOutput.textContent = `音频播放失败：${entry.path}`
+          errorOutput.hidden = false
+        }
       })
     } catch {
-      errorOutput.textContent = `音频播放失败：${entry.path}`
-      errorOutput.hidden = false
+      if (errorOutput) {
+        errorOutput.textContent = `音频播放失败：${entry.path}`
+        errorOutput.hidden = false
+      }
     }
   }
 

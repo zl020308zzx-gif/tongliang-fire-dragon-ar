@@ -1,7 +1,9 @@
 import { assetUrl } from './asset-url.js'
+import { IS_MOBILE_DEVICE, selectPageImageRoot } from './platform-assets.js'
 import { SHARED_FOLDOUT_LAYOUT } from './shared-foldout-layout.js'
 
-const PAGE1_DIRECTORY = assetUrl('assets/page1/images/page1')
+const PAGE1_IMAGE_ROOT = selectPageImageRoot('page1', 'page1-mobile')
+const PAGE1_DIRECTORY = assetUrl(`assets/${PAGE1_IMAGE_ROOT}/images/page1`)
 const FRONT_DIRECTION_SIGN = 1
 const A5_WIDTH_MM = 148
 const A5_HEIGHT_MM = 210
@@ -12,9 +14,10 @@ const CRAFT_WIDTH = 3.42
 const CRAFT_HEIGHT = CRAFT_WIDTH * (1024 / 1041)
 
 export const PAGE1_PREVIEW_CONFIG = {
+  mobileAssets: IS_MOBILE_DEVICE,
   assets: {
-    backgroundBoard: `${PAGE1_DIRECTORY}/craft-panel.png`,
-    floorBase: `${PAGE1_DIRECTORY}/craft-panel-base.png`,
+    backgroundBoard: `${PAGE1_DIRECTORY}/craft-panel.jpg`,
+    floorBase: `${PAGE1_DIRECTORY}/craft-panel-base.jpg`,
     titleImage: `${PAGE1_DIRECTORY}/page-title-fire.png`,
     bambooBundle: `${PAGE1_DIRECTORY}/bamboo-bundle.png`,
     bambooBuildAudio: assetUrl('assets/page1/audio/bamboo-build.mp3'),
@@ -230,7 +233,7 @@ export const PAGE1_PREVIEW_CONFIG = {
   },
   backgroundBoard: {
     position: [0, 0, -0.08],
-    // 保持 craft-panel.png 的 536 × 999 原始比例。
+    // 保持 craft-panel.jpg 的 536 × 999 原始比例。
     size: { width: PANEL_WIDTH, height: PANEL_HEIGHT },
     rotation: [0, 0, 0],
   },
