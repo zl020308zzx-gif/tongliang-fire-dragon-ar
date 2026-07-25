@@ -125,6 +125,15 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   markTiming('pageOpened', null, pageOpenedAt)
   markTiming('criticalPreloadStarted')
 
+  const criticalAssetDiagnostics = [
+    ...PAGE2_CRITICAL_IMAGE_KEYS.map((name) => ({ name, url: config.assets[name] })),
+    { name: TARGETS_TASK, url: config.targets },
+  ]
+  console.info(`PAGE2 ASSET START:
+${criticalAssetDiagnostics
+    .map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`)
+    .join('\n')}`)
+
   const getTimingReport = () => {
     const events = Object.fromEntries(Object.entries(timingEvents).map(([key, value]) => [key, Math.round(value - pageOpenedAt)]))
     const deltas = {
@@ -259,6 +268,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     const img = entry ? root.querySelector(`#${entry[0]}`) : null
     const url = config.assets[key]
     const promise = (async () => {
+      const loadStartedAt = performance.now()
       if (!(img instanceof HTMLImageElement)) throw new Error(`[page2] Missing image element: ${url}`)
       requestedCount += 1
       status.set(key, 'loading')
@@ -280,12 +290,25 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
         if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) decodedCriticalImages.add(key)
         evaluateCriticalMilestones()
         emit()
+        if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) {
+          console.info(`PAGE2 ASSET SUCCESS:
+name: ${key}
+load time: ${Math.round(performance.now() - loadStartedAt)} ms
+width: ${ready.naturalWidth}
+height: ${ready.naturalHeight}`)
+        }
         return ready
       } catch (error) {
         failedCount += 1
         failedKeys.add(key)
         status.set(key, isTimeoutError(error) ? 'timedOut' : 'failed')
         emit()
+        if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) {
+          console.error(`PAGE2 ASSET FAILED:
+name: ${key}
+url: ${url}
+error: ${error?.message || String(error)}`, error)
+        }
         console.error('[page2] Preload failed', { key, url, error })
         throw error
       }
@@ -296,6 +319,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
 
   const preloadTargets = async () => {
     const controller = new AbortController()
+    const loadStartedAt = performance.now()
     try {
       status.set(TARGETS_TASK, 'loading')
       emit()
@@ -315,6 +339,12 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       status.set(TARGETS_TASK, 'ready')
       evaluateCriticalMilestones()
       emit()
+      console.info(`PAGE2 ASSET SUCCESS:
+name: ${TARGETS_TASK}
+load time: ${Math.round(performance.now() - loadStartedAt)} ms
+width: n/a
+height: n/a
+byteLength: ${buffer.byteLength}`)
       return { byteLength: buffer.byteLength }
     } catch (error) {
       targetFailed = true
@@ -322,20 +352,39 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       failedKeys.add(TARGETS_TASK)
       status.set(TARGETS_TASK, isTimeoutError(error) ? 'timedOut' : 'failed')
       emit()
+      console.error(`PAGE2 ASSET FAILED:
+name: ${TARGETS_TASK}
+url: ${config.targets}
+error: ${error?.message || String(error)}`, error)
       console.error('[page2] targets.mind preload failed', { url: config.targets, error })
       throw error
     }
   }
 
   const runQueue = async (queue) => {
+    const settledAssets = []
     const workers = Array.from({ length: Math.min(maxConcurrency, queue.length) }, async () => {
       while (!destroyed && queue.length > 0) {
         const key = queue.shift()
-        await Promise.allSettled([key === TARGETS_TASK ? preloadTargets() : preloadImage(key)])
+        const [result] = await Promise.allSettled([
+          key === TARGETS_TASK ? preloadTargets() : preloadImage(key),
+        ])
+        settledAssets.push({ key, result })
         await nextFrame()
       }
     })
     await Promise.allSettled(workers)
+    const fulfilledAssets = settledAssets.filter(({ result }) => result.status === 'fulfilled')
+    const rejectedAssets = settledAssets.filter(({ result }) => result.status === 'rejected')
+    const rejectedDetails = rejectedAssets.map(({ key, result }) => ({
+        name: key,
+        url: key === TARGETS_TASK ? config.targets : config.assets[key],
+        error: result.reason?.message || String(result.reason),
+      }))
+    console.info(`PAGE2 ALLSETTLED RESULT:
+fulfilled数量: ${fulfilledAssets.length}
+rejected数量: ${rejectedAssets.length}
+失败资源数组: ${JSON.stringify(rejectedDetails)}`)
   }
 
   const criticalQueue = [
@@ -373,6 +422,10 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       failedKeys.add(key)
       failedCount += 1
       emit()
+      console.error(`PAGE2 ASSET FAILED:
+name: ${key}
+url: ${config.assets[key]}
+error: ${error?.message || String(error)}`, error)
       return true
     },
     setPhaseMessage(message = '') {
