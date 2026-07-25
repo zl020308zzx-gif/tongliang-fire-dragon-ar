@@ -593,7 +593,7 @@ export function renderArPage1(root) {
       if (!ready || activationId !== page1ActivationId) return false
       page1FirstVisualFrameReady = true
       page1PendingEnter = false
-      sharedModuleUi.completeLoading()
+      sharedModuleUi.completeLoading(0)
       updateAppDebug()
       return true
     }).finally(() => {
@@ -1196,6 +1196,21 @@ export function renderArPage1(root) {
     updateStorageDebug()
   }
 
+  const resetPage1ForOtherTarget = () => {
+    page1ActivationId += 1
+    page1FirstVisualGatePromise = null
+    page1PendingEnter = false
+    page1FoundationVisibleRequested = false
+    page1FirstVisualFrameReady = false
+    arBridge.resetExperience?.()
+    stableAnchorController?.setTracked(false)
+    setEntityVisible(stableAnchor, false)
+    hotspot?.setTracked(false)
+    panelController?.pause()
+    ui.hideLost()
+    arBridge.hideHints?.('已切换至其他识别图')
+  }
+
   const resumeTrackedExperience = () => {
     ui.hideLost()
     const snapshot = arBridge.resumeTracking?.() ?? arBridge.getSnapshot?.()
@@ -1251,7 +1266,7 @@ export function renderArPage1(root) {
     const state = controller?.getState?.() || {}
     if (activeTargetIndex !== targetIndex) return
     if (state.firstVisualFrameReady) {
-      sharedModuleUi.completeLoading()
+      sharedModuleUi.completeLoading(targetIndex)
       return
     }
     const loadingPending = state.pendingEnter
@@ -1319,8 +1334,10 @@ export function renderArPage1(root) {
       debug: page2Debug,
       preloader: page2Preloader,
       onActivate() {
+        const previousTargetIndex = activeTargetIndex
         page1ActivationId += 1
         page1FirstVisualGatePromise = null
+        if (previousTargetIndex === 0) resetPage1ForOtherTarget()
         setAppState(APP_AR_STATES.MODULE_ACTIVE, 1)
         const snapshot = page2Preloader.getSnapshot()
         sharedModuleUi.showLoading({
@@ -1342,8 +1359,8 @@ export function renderArPage1(root) {
         ui.hideLost()
         arBridge.hideHints?.('已切换至第二页识别图')
       },
-      onTrackingFound: () => sharedModuleUi.hideLost(),
-      onTrackingLost: () => sharedModuleUi.showLost(),
+      onTrackingFound: () => sharedModuleUi.hideLost(1),
+      onTrackingLost: () => sharedModuleUi.showLost(1),
       onEntryStateChange: () => showModuleLoader(
         1,
         page2Preloader.getSnapshot(),
@@ -1386,8 +1403,10 @@ export function renderArPage1(root) {
       debug: page3Debug,
       preloader: page3Preloader,
       onActivate() {
+        const previousTargetIndex = activeTargetIndex
         page1ActivationId += 1
         page1FirstVisualGatePromise = null
+        if (previousTargetIndex === 0) resetPage1ForOtherTarget()
         setAppState(APP_AR_STATES.MODULE_ACTIVE, 2)
         const snapshot = page3Preloader.getSnapshot()
         sharedModuleUi.showLoading({
@@ -1409,8 +1428,8 @@ export function renderArPage1(root) {
         ui.hideLost()
         arBridge.hideHints?.('已切换至第三页识别图')
       },
-      onTrackingFound: () => sharedModuleUi.hideLost(),
-      onTrackingLost: () => sharedModuleUi.showLost(),
+      onTrackingFound: () => sharedModuleUi.hideLost(2),
+      onTrackingLost: () => sharedModuleUi.showLost(2),
       onEntryStateChange: () => showModuleLoader(
         2,
         page3Preloader.getSnapshot(),
@@ -1549,7 +1568,7 @@ export function renderArPage1(root) {
         hotspot.setTracked(true)
         panelController.resume()
         ui.hideLost()
-        sharedModuleUi.hideLost()
+        sharedModuleUi.hideLost(0)
         setAppState(APP_AR_STATES.MODULE_ACTIVE, 0)
         ui.showModule()
         page1PendingEnter = !page1FirstVisualFrameReady
@@ -1578,7 +1597,7 @@ export function renderArPage1(root) {
         panelController.pause()
         if (craftStarted) arBridge.pauseTracking?.()
         setArState(AR_PAGE1_STATES.TRACKING_PAUSED)
-        sharedModuleUi.showLost()
+        sharedModuleUi.showLost(0)
         arBridge.hideHints?.('targetLost或追踪暂停')
         updateTrackingDebug()
       },
@@ -1587,7 +1606,7 @@ export function renderArPage1(root) {
           root.querySelector('.page1-ar')?.classList.contains('is-page2-active') ||
           root.querySelector('.page1-ar')?.classList.contains('is-page3-active')
         ) return
-        sharedModuleUi.showLost()
+        sharedModuleUi.showLost(0)
         updateTrackingDebug(data)
       },
       onDebug: updateTrackingDebug,

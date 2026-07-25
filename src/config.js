@@ -330,7 +330,7 @@ export const PAGE1_PREVIEW_CONFIG = {
       positionDeadzone: 0.002,
       rotationDeadzoneDeg: 0.35,
       scaleDeadzone: 0.001,
-      lostHoldDuration: 250,
+      lostHoldDuration: 850,
       recoverDuration: 300,
     },
     arPanel: {

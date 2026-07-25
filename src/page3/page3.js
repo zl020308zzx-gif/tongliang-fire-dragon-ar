@@ -1853,7 +1853,11 @@ export function createPage3Experience({
     lostNotice.hidden = true
     ui.hidden = false
     syncEntryUi()
-    preloaderSession.startCritical()
+    const preloadSnapshot = preloaderSession.getSnapshot()
+    const criticalLoad = preloadSnapshot.criticalFailed
+      ? preloaderSession.retryFailed().then(() => preloaderSession.startCritical())
+      : preloaderSession.startCritical()
+    criticalLoad
       .then(() => tryEnterPage3())
       .catch((error) => {
         showError(error.message)
@@ -2251,14 +2255,17 @@ export function createPage3Experience({
       tracked = false
       stable.setTracked(false)
       pauseForTracking()
-      stopStageMedia({ reset: false })
+      stopStageMedia()
+      stopAndReset(realVideoPlayer)
+      realVideoOverlay.hidden = true
+      completeScreen.hidden = true
+      realVideoMessage.hidden = true
+      drumHitCount = 0
+      hideError()
       root.querySelector('.page1-ar')?.classList.remove('is-page3-active')
       lostNotice.hidden = true
-      if (![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) {
-        setPage3State(PAGE3_STATES.HIDDEN)
-        setVisible(anchor, false)
-      }
-      releasePage3ImageTextures()
+      setPage3State(PAGE3_STATES.HIDDEN)
+      setVisible(anchor, false)
       firstVisualGateGeneration += 1
       firstVisualGatePromise = null
       foundationVisibleRequested = false
@@ -2297,6 +2304,7 @@ export function createPage3Experience({
       stable.destroy()
       effects.destroy()
       unsubscribePreloader()
+      releasePage3ImageTextures()
       preloaderSession.destroy()
       stopStageMedia()
       stopAndReset(realVideoPlayer)
