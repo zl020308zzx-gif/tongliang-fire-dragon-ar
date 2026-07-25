@@ -3,6 +3,7 @@ import {
   PAGE3_IMAGE_ENTRIES,
 } from './page3-config.js'
 import {
+  isTimeoutError,
   loadImageElement as loadSharedImageElement,
   loadMediaElement as loadSharedMediaElement,
 } from '../module-asset-loader.js'
@@ -50,13 +51,27 @@ export function createPage3Preloader({ root, config, debug = false }) {
   const snapshot = () => {
     const criticalReady = PAGE3_CRITICAL_IMAGE_KEYS.every((key) => status.get(key) === 'ready')
     const deferredKeys = [...deferredImageKeys, ...mediaEntries.map(([, key]) => key)]
-    const deferredSettled = deferredKeys.every((key) => ['ready', 'failed'].includes(status.get(key)))
+    const deferredSettled = deferredKeys.every((key) => ['ready', 'failed', 'timedOut'].includes(status.get(key)))
+    const criticalCompleted = PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => status.get(key) === 'ready').length
+    const pathsFor = (statuses) => PAGE3_CRITICAL_IMAGE_KEYS
+      .filter((key) => statuses.includes(status.get(key)))
+      .map((key) => config.assets[key])
     return {
       criticalReady,
       criticalProgress: PAGE3_CRITICAL_IMAGE_KEYS.length
-        ? (PAGE3_CRITICAL_IMAGE_KEYS.filter((key) => status.get(key) === 'ready').length / PAGE3_CRITICAL_IMAGE_KEYS.length) * 100
+        ? (criticalCompleted / PAGE3_CRITICAL_IMAGE_KEYS.length) * 100
         : 100,
-      criticalFailed: PAGE3_CRITICAL_IMAGE_KEYS.some((key) => status.get(key) === 'failed'),
+      criticalTotal: PAGE3_CRITICAL_IMAGE_KEYS.length,
+      criticalCompleted,
+      criticalPendingPaths: pathsFor(['loading', 'idle']).concat(
+        PAGE3_CRITICAL_IMAGE_KEYS
+          .filter((key) => !status.has(key))
+          .map((key) => config.assets[key]),
+      ),
+      criticalFailedPaths: pathsFor(['failed']),
+      criticalTimedOutPaths: pathsFor(['timedOut']),
+      criticalFailed: PAGE3_CRITICAL_IMAGE_KEYS.some((key) =>
+        ['failed', 'timedOut'].includes(status.get(key))),
       deferredSettled,
       failedCount: errors.size,
       status: new Map(status),
@@ -81,8 +96,9 @@ export function createPage3Preloader({ root, config, debug = false }) {
       (error) => {
         console.error(error.message || `[page3] 资源加载失败：${path}`, error)
         if (!destroyed) {
-          status.set(key, 'failed')
-          errors.set(key, { path, message: error.message })
+          const failureStatus = isTimeoutError(error) ? 'timedOut' : 'failed'
+          status.set(key, failureStatus)
+          errors.set(key, { path, message: error.message, status: failureStatus })
           emit()
         }
         throw error

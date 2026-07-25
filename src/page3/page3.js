@@ -3,6 +3,7 @@ import { createTargetLifecycle } from '../target-lifecycle.js'
 import { PAGE3_CONTENT } from './page3-content.js'
 import {
   PAGE3_CONFIG,
+  PAGE3_CRITICAL_IMAGE_KEYS,
   PAGE3_IMAGE_ENTRIES,
   PAGE3_STATES,
 } from './page3-config.js'
@@ -219,7 +220,6 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
 
 export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
   <section class="page3-ui" aria-label="火舞夜空 AR 界面">
-    <header class="page3-header"><span>03</span><h1>火舞夜空</h1></header>
     <section class="page3-placement-guide" role="status" hidden>
       <strong>请将第三页识别卡平放在桌面</strong>
       <span>保持手机斜向观察，立体舞台即将展开</span>
@@ -295,6 +295,8 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
     <p>targetFound <b data-page3-debug-target-found>false</b></p>
     <p>page3RootVisible <b data-page3-debug-root-visible>false</b></p>
     <p>foundation frames <b data-page3-debug-foundation-frames>0 / ${config.foundation.readyRenderFrames}</b></p>
+    <p>critical <b data-page3-debug-critical-count>0 / ${PAGE3_CRITICAL_IMAGE_KEYS.length}</b></p>
+    <pre data-page3-debug-critical-assets>等待关键资源状态</pre>
     <p>FPS <b data-page3-debug-fps>0</b></p>
     <button type="button" data-page3-debug-action="simulate">模拟识别</button>
     <button type="button" data-page3-debug-action="drum">模拟击鼓</button>
@@ -441,6 +443,8 @@ export function createPage3Experience({
   const audioFades = new Map()
   const mediaPausedForTracking = new Set()
   const chromaMaterials = new Set()
+  let criticalRenderableFrames = 0
+  let criticalGateOpened = false
 
   const stable = createStableAnchorController({
     target,
@@ -641,6 +645,8 @@ export function createPage3Experience({
       if (snapshot.status.get(key) !== 'ready') return
       root.querySelectorAll(`[data-page3-asset-key="${key}"]`).forEach((entity) => {
         if (entity.dataset.page3Bound === 'true') return
+        setVisible(entity, false)
+        setOpacity(entity, 0)
         entity.dataset.page3Bound = 'true'
         entity.setAttribute('src', `#${id}`)
       })
@@ -718,6 +724,98 @@ export function createPage3Experience({
 
   const isActuallyVisible = (...entities) =>
     entities.every((entity) => entity?.getAttribute('visible') !== false && entity?.object3D?.visible !== false)
+
+  const isWorldVisible = (entity) => {
+    let current = entity?.object3D
+    if (!current) return false
+    while (current) {
+      if (current.visible === false) return false
+      current = current.parent
+    }
+    return true
+  }
+
+  const hasFiniteEntityTransform = (entity) => Boolean(entity?.object3D && [
+    entity.object3D.position.x,
+    entity.object3D.position.y,
+    entity.object3D.position.z,
+    entity.object3D.rotation.x,
+    entity.object3D.rotation.y,
+    entity.object3D.rotation.z,
+    entity.object3D.scale.x,
+    entity.object3D.scale.y,
+    entity.object3D.scale.z,
+  ].every(Number.isFinite))
+
+  const getCriticalAssetDiagnostics = () => {
+    const preloadSnapshot = preloaderSession.getSnapshot()
+    return Object.fromEntries(PAGE3_CRITICAL_IMAGE_KEYS.map((key) => {
+      const assetEntry = PAGE3_IMAGE_ENTRIES.find(([, entryKey]) => entryKey === key)
+      const image = assetEntry ? root.querySelector(`#${assetEntry[0]}`) : null
+      const expectedSource = new URL(config.assets[key], document.baseURI).href
+      const entities = [...root.querySelectorAll(`[data-page3-asset-key="${key}"]`)]
+      const imageReady = Boolean(
+        image?.complete &&
+        image.naturalWidth > 0 &&
+        image.naturalHeight > 0 &&
+        (image.currentSrc === expectedSource || image.src === expectedSource),
+      )
+      const entityStates = entities.map((entity) => {
+        const materials = []
+        entity.object3D?.traverse((object) => {
+          if (!object.isMesh) return
+          const entries = Array.isArray(object.material) ? object.material : [object.material]
+          entries.filter(Boolean).forEach((material) => materials.push(material))
+        })
+        const mapped = materials.filter((material) => {
+          const mapImage = material.map?.image
+          return mapImage && (
+            mapImage === image ||
+            mapImage.currentSrc === expectedSource ||
+            mapImage.src === expectedSource
+          )
+        })
+        const textureBound = mapped.length > 0
+        const entityMounted = isMountedUnderAnchor(entity)
+        return {
+          textureBound,
+          entityMounted,
+          entityRenderable: Boolean(
+            imageReady &&
+            textureBound &&
+            entityMounted &&
+            hasFiniteEntityTransform(entity),
+          ),
+          visible: isWorldVisible(entity),
+          opacity: getMaterialOpacity(entity),
+          textureUuids: mapped.map((material) => material.map.uuid),
+        }
+      })
+      return [key, {
+        path: config.assets[key],
+        imageStatus: preloadSnapshot.status.get(key) || 'idle',
+        imageReady,
+        textureBound: entities.length > 0 && entityStates.every((item) => item.textureBound),
+        entityMounted: entities.length > 0 && entityStates.every((item) => item.entityMounted),
+        entityRenderable: entities.length > 0 && entityStates.every((item) => item.entityRenderable),
+        visible: entities.length > 0 && entityStates.every((item) => item.visible),
+        opacity: entityStates.length ? Math.max(...entityStates.map((item) => item.opacity)) : 0,
+        source: image?.currentSrc || image?.src || '',
+        entities: entityStates,
+      }]
+    }))
+  }
+
+  const getCriticalSceneReadiness = () => {
+    const assets = getCriticalAssetDiagnostics()
+    const values = Object.values(assets)
+    return {
+      assets,
+      criticalTexturesBound: values.length > 0 && values.every((item) => item.textureBound),
+      criticalEntitiesMounted: values.length > 0 && values.every((item) => item.entityMounted),
+      criticalEntitiesRenderable: values.length > 0 && values.every((item) => item.entityRenderable),
+    }
+  }
 
   const isPositiveFiniteScale = (values) =>
     values.every((value) => Number.isFinite(value) && Math.abs(value) > 1e-6)
@@ -1037,9 +1135,9 @@ export function createPage3Experience({
     setVisible(backgroundRoot, false)
     setVisible(floorRoot, false)
     setVisible(stageRoot, false)
-    setVisible(background, true)
-    setVisible(floor, true)
-    setVisible(title, true)
+    setVisible(background, false)
+    setVisible(floor, false)
+    setVisible(title, false)
     setVisible(cloudBack, false)
     setVisible(cloudMiddle, false)
     setVisible(cloudFront, false)
@@ -1186,6 +1284,19 @@ export function createPage3Experience({
     root.querySelector('[data-page3-debug-root-visible]').textContent = String(diagnostics.page3RootVisible)
     root.querySelector('[data-page3-debug-foundation-frames]').textContent =
       `${foundationRenderFrames} / ${config.foundation.readyRenderFrames}`
+    const preloadSnapshot = preloaderSession.getSnapshot()
+    const criticalScene = getCriticalSceneReadiness()
+    root.querySelector('[data-page3-debug-critical-count]').textContent =
+      `${preloadSnapshot.criticalCompleted} / ${preloadSnapshot.criticalTotal}`
+    root.querySelector('[data-page3-debug-critical-assets]').textContent = JSON.stringify({
+      criticalTexturesBound: criticalScene.criticalTexturesBound,
+      criticalEntitiesMounted: criticalScene.criticalEntitiesMounted,
+      criticalEntitiesRenderable: criticalScene.criticalEntitiesRenderable,
+      criticalPendingPaths: preloadSnapshot.criticalPendingPaths,
+      criticalFailedPaths: preloadSnapshot.criticalFailedPaths,
+      criticalTimedOutPaths: preloadSnapshot.criticalTimedOutPaths,
+      assets: criticalScene.assets,
+    }, null, 2)
     root.querySelector('[data-page3-debug-fps]').textContent = String(fps)
   }
 
@@ -1214,8 +1325,12 @@ export function createPage3Experience({
 
     if (state === PAGE3_STATES.LOADING) {
       loadingText.textContent = '正在唤醒火龙舞台……'
+      criticalRenderableFrames = 0
+      criticalGateOpened = false
+      placementGuideActive = false
       resetVisuals()
-      placementGuide.hidden = !placementGuideActive
+      placementGuide.hidden = true
+      loading.hidden = false
     } else if (state === PAGE3_STATES.READY) {
       stopStageMedia()
       resetVisuals()
@@ -1686,7 +1801,30 @@ export function createPage3Experience({
     updateDrumAnimation(delta)
 
     if (state === PAGE3_STATES.LOADING) {
-      if (updateFoundationGate() && criticalReady) setPage3State(PAGE3_STATES.READY)
+      if (!criticalReady) {
+        criticalRenderableFrames = 0
+        loadingText.textContent = '正在加载火舞舞台资源……'
+        return
+      }
+      const criticalScene = getCriticalSceneReadiness()
+      if (
+        !criticalScene.criticalTexturesBound ||
+        !criticalScene.criticalEntitiesMounted ||
+        !criticalScene.criticalEntitiesRenderable
+      ) {
+        criticalRenderableFrames = 0
+        loadingText.textContent = '正在建立AR场景……'
+        return
+      }
+      if (!criticalGateOpened) {
+        criticalRenderableFrames += 1
+        loadingText.textContent = '正在建立AR场景……'
+        if (criticalRenderableFrames < config.foundation.readyRenderFrames) return
+        criticalGateOpened = true
+        stateElapsed = 0
+      }
+      const foundationReadyNow = updateFoundationGate()
+      if (foundationReadyNow) setPage3State(PAGE3_STATES.READY)
       return
     }
     if (state === PAGE3_STATES.READY) {

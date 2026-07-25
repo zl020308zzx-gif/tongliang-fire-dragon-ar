@@ -1,10 +1,52 @@
+export const ASSET_TIMEOUTS = Object.freeze({
+  imageLoadMs: 15000,
+  imageDecodeMs: 8000,
+  videoReadyMs: 20000,
+  audioReadyMs: 15000,
+  targetFetchMs: 15000,
+  renderFramesMs: 2000,
+})
+
+export class AssetTimeoutError extends Error {
+  constructor(message, path = '') {
+    super(message)
+    this.name = 'AssetTimeoutError'
+    this.path = path
+    this.timedOut = true
+    this.status = 'timedOut'
+  }
+}
+
+export const isTimeoutError = (error) =>
+  error?.timedOut === true || error?.status === 'timedOut' || error?.name === 'AssetTimeoutError'
+
+export function withTimeout(promise, timeoutMs, message, path = '', onTimeout = null) {
+  let timer = 0
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((_, reject) => {
+      timer = window.setTimeout(() => {
+        onTimeout?.()
+        reject(new AssetTimeoutError(message, path))
+      }, timeoutMs)
+    }),
+  ]).finally(() => window.clearTimeout(timer))
+}
+
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve))
 
 export async function loadImageElement(image, path) {
   if (!(image instanceof HTMLImageElement)) throw new Error(`缺少图片元素：${path}`)
-  if (!image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
-    await new Promise((resolve, reject) => {
-      const cleanup = () => {
+  const targetUrl = new URL(path, document.baseURI).href
+  const sourceMatches = image.currentSrc === targetUrl || image.src === targetUrl
+  const imageReady = () =>
+    image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+  const reloadFailedSource = sourceMatches && image.complete && !imageReady()
+
+  if (!sourceMatches || !imageReady()) {
+    let cleanup = () => {}
+    const loadPromise = new Promise((resolve, reject) => {
+      cleanup = () => {
         image.removeEventListener('load', onLoad)
         image.removeEventListener('error', onError)
       }
@@ -12,31 +54,51 @@ export async function loadImageElement(image, path) {
       const onError = () => { cleanup(); reject(new Error(`图片加载失败：${path}`)) }
       image.addEventListener('load', onLoad, { once: true })
       image.addEventListener('error', onError, { once: true })
-      if (!image.src) image.src = path
+      if (!sourceMatches || reloadFailedSource) {
+        if (reloadFailedSource) image.removeAttribute('src')
+        image.src = path
+      }
       if (image.complete) {
         if (image.naturalWidth > 0 && image.naturalHeight > 0) onLoad()
-        else onError()
+        else if (sourceMatches && !reloadFailedSource) onError()
       }
     })
+    await withTimeout(
+      loadPromise,
+      ASSET_TIMEOUTS.imageLoadMs,
+      `图片加载超时：${path}`,
+      path,
+      cleanup,
+    )
   }
+
   if (typeof image.decode === 'function') {
     try {
-      await image.decode()
+      await withTimeout(
+        image.decode(),
+        ASSET_TIMEOUTS.imageDecodeMs,
+        `图片解码超时：${path}`,
+        path,
+      )
     } catch (error) {
-      if (image.naturalWidth <= 0 || image.naturalHeight <= 0) throw error
+      if (isTimeoutError(error) || image.naturalWidth <= 0 || image.naturalHeight <= 0) throw error
     }
   }
   if (image.naturalWidth <= 0 || image.naturalHeight <= 0) throw new Error(`图片尺寸无效：${path}`)
+  image.dataset.sourceUrl = targetUrl
   image.dataset.loaded = 'true'
   return image
 }
 
 export function loadMediaElement(media, path, type = 'video', readyState = 2) {
   if (!(media instanceof HTMLMediaElement)) return Promise.reject(new Error(`缺少媒体元素：${path}`))
-  if (media.readyState >= readyState) return Promise.resolve(media)
-  return new Promise((resolve, reject) => {
+  const targetUrl = new URL(path, document.baseURI).href
+  const sourceMatches = media.currentSrc === targetUrl || media.src === targetUrl
+  if (sourceMatches && media.readyState >= readyState) return Promise.resolve(media)
+  let cleanup = () => {}
+  const readyPromise = new Promise((resolve, reject) => {
     const events = type === 'audio' ? ['canplay', 'canplaythrough'] : ['loadeddata', 'canplay']
-    const cleanup = () => {
+    cleanup = () => {
       events.forEach((name) => media.removeEventListener(name, onReady))
       media.removeEventListener('error', onError)
     }
@@ -52,19 +114,29 @@ export function loadMediaElement(media, path, type = 'video', readyState = 2) {
     }
     events.forEach((name) => media.addEventListener(name, onReady))
     media.addEventListener('error', onError, { once: true })
-    if (!media.src) media.src = path
+    if (!sourceMatches) media.src = path
     media.preload = 'auto'
     media.load()
     if (media.readyState >= readyState) onReady()
   })
+  const timeoutMs = type === 'audio' ? ASSET_TIMEOUTS.audioReadyMs : ASSET_TIMEOUTS.videoReadyMs
+  return withTimeout(
+    readyPromise,
+    timeoutMs,
+    `${type === 'audio' ? '音频' : '视频'}加载超时：${path}`,
+    path,
+    cleanup,
+  )
 }
 
 export async function waitForMountedFrames(validate, frameCount = 2) {
-  for (let index = 0; index < frameCount; index += 1) {
-    await nextFrame()
-    if (!validate()) throw new Error(`实体渲染校验失败（第 ${index + 1} 帧）`)
-  }
-  return true
+  return withTimeout((async () => {
+    for (let index = 0; index < frameCount; index += 1) {
+      await nextFrame()
+      if (!validate()) throw new Error(`实体渲染校验失败（第 ${index + 1} 帧）`)
+    }
+    return true
+  })(), ASSET_TIMEOUTS.renderFramesMs, '实体渲染帧等待超时')
 }
 
 export function createModuleAssetLoader({ modules = {}, onChange = null }) {
@@ -83,10 +155,12 @@ export function createModuleAssetLoader({ modules = {}, onChange = null }) {
     const critical = tasks.filter((task) => task.phase === 'criticalAssets')
     const ready = critical.filter((task) => task.status === 'ready').length
     const failed = critical.filter((task) => task.status === 'failed').length
+    const timedOut = critical.filter((task) => task.status === 'timedOut').length
     return {
       criticalProgress: critical.length ? (ready / critical.length) * 100 : 100,
       criticalReady: critical.length > 0 && ready === critical.length,
-      criticalFailed: failed > 0,
+      criticalFailed: failed > 0 || timedOut > 0,
+      criticalTimedOut: timedOut > 0,
       status: new Map(tasks.map((task) => [task.key, task.status])),
       errors: new Map(tasks.filter((task) => task.error).map((task) => [task.key, task.error])),
     }
@@ -100,17 +174,18 @@ export function createModuleAssetLoader({ modules = {}, onChange = null }) {
     task.status = 'loading'
     task.error = null
     emit(moduleId)
-    task.promise = Promise.resolve().then(task.load).then(
-      async () => {
+    task.promise = Promise.resolve()
+      .then(task.load)
+      .then(async () => {
         if (task.validate) await waitForMountedFrames(task.validate, task.frames ?? 2)
         task.status = 'ready'
         task.promise = null
         emit(moduleId)
         return true
-      },
-      (error) => {
-        task.status = 'failed'
-        task.error = { path: task.path, message: error?.message || String(error) }
+      })
+      .catch((error) => {
+        task.status = isTimeoutError(error) ? 'timedOut' : 'failed'
+        task.error = { path: task.path, message: error?.message || String(error), status: task.status }
         task.promise = null
         console.error(`[${moduleId}] 资源加载失败`, task.error)
         emit(moduleId)
@@ -133,7 +208,8 @@ export function createModuleAssetLoader({ modules = {}, onChange = null }) {
     preloadIdleAssets: (moduleId) => runPhase(moduleId, 'laterAssets'),
     retryFailedAssets(moduleId) {
       const module = state.get(moduleId)
-      const failed = [...(module?.tasks.values() || [])].filter((task) => task.status === 'failed')
+      const failed = [...(module?.tasks.values() || [])]
+        .filter((task) => ['failed', 'timedOut'].includes(task.status))
       return Promise.allSettled(failed.map((task) => runTask(moduleId, task))).then(() => snapshot(moduleId))
     },
     getProgress: snapshot,

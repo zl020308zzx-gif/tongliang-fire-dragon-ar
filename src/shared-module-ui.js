@@ -38,6 +38,15 @@ export function createSharedModuleUi({ root, signal }) {
 
   retry.addEventListener('click', () => retryAction?.(), { signal })
 
+  const checkDuplicateHeaders = () => {
+    if (!import.meta.env.DEV) return
+    requestAnimationFrame(() => {
+      const visibleHeaders = [...root.querySelectorAll('.module-header')]
+        .filter((element) => !element.hidden && getComputedStyle(element).display !== 'none')
+      if (visibleHeaders.length > 1) console.warn('[UI] Duplicate module headers detected')
+    })
+  }
+
   return {
     activate(targetIndex) {
       const copy = MODULE_COPY[targetIndex]
@@ -47,6 +56,7 @@ export function createSharedModuleUi({ root, signal }) {
       header.hidden = false
       bottomHint.hidden = false
       lost.hidden = true
+      checkDuplicateHeaders()
     },
     deactivate() {
       header.hidden = true

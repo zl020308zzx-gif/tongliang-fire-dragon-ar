@@ -1,4 +1,9 @@
-import { loadImageElement } from '../module-asset-loader.js'
+import {
+  ASSET_TIMEOUTS,
+  isTimeoutError,
+  loadImageElement,
+  withTimeout,
+} from '../module-asset-loader.js'
 
 export const PAGE2_ASSET_ENTRIES = Object.freeze([
   ['page2-floor-asset', 'floor'],
@@ -42,7 +47,11 @@ export const PAGE2_CRITICAL_IMAGE_KEYS = Object.freeze([
 
 const TARGETS_TASK = '__targets__'
 const sessions = new WeakMap()
-const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+const nextFrame = () => withTimeout(
+  new Promise((resolve) => requestAnimationFrame(resolve)),
+  ASSET_TIMEOUTS.renderFramesMs,
+  '[page2] 等待资源调度渲染帧超时',
+)
 const isMobile = () => matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
 const addImagePreload = (url) => {
@@ -77,6 +86,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   if (existing?.rootImage === currentBackgroundImage) return existing
 
   const pageOpenedAt = performance.now()
+  addImagePreload(config.assets.floor)
   addImagePreload(config.assets.background)
   addImagePreload(config.assets.title)
 
@@ -98,6 +108,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   let failedCount = 0
   let targetReady = false
   let targetFailed = false
+  let targetTimedOut = false
   let maxTextureUploadMs = 0
   let uiDismissed = false
   let phaseMessage = ''
@@ -136,33 +147,56 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
 
   const snapshot = () => {
     const totalCount = PAGE2_ASSET_ENTRIES.length
-    const settledCount = decodedCount + failedCount
+    const settledCount = PAGE2_ASSET_ENTRIES
+      .filter(([, key]) => ['decoded', 'ready', 'failed', 'timedOut'].includes(status.get(key)))
+      .length
+    const currentFailedCount = PAGE2_ASSET_ENTRIES
+      .filter(([, key]) => ['failed', 'timedOut'].includes(status.get(key)))
+      .length
     const criticalImageTotal = PAGE2_CRITICAL_IMAGE_KEYS.length
-    const criticalTotalUnits = criticalImageTotal * 3 + 2
-    const criticalDoneUnits = loadedCriticalImages.size + decodedCriticalImages.size + criticalTextures.size + (targetReady ? 2 : 0)
-    const criticalProgress = Math.min(100, (criticalDoneUnits / criticalTotalUnits) * 100)
+    const criticalTotal = criticalImageTotal + 1
+    const criticalCompleted = criticalTextures.size + (targetReady ? 1 : 0)
+    const criticalProgress = Math.min(100, (criticalCompleted / criticalTotal) * 100)
     const criticalReady = targetReady
       && decodedCriticalImages.size === criticalImageTotal
       && criticalTextures.size === criticalImageTotal
     const criticalFailed = targetFailed
-      || PAGE2_CRITICAL_IMAGE_KEYS.some((key) => status.get(key) === 'failed')
+      || PAGE2_CRITICAL_IMAGE_KEYS.some((key) => ['failed', 'timedOut'].includes(status.get(key)))
+    const criticalPendingPaths = PAGE2_CRITICAL_IMAGE_KEYS
+      .filter((key) => !['ready', 'failed', 'timedOut'].includes(status.get(key)))
+      .map((key) => config.assets[key])
+    const criticalFailedPaths = PAGE2_CRITICAL_IMAGE_KEYS
+      .filter((key) => status.get(key) === 'failed')
+      .map((key) => config.assets[key])
+    const criticalTimedOutPaths = PAGE2_CRITICAL_IMAGE_KEYS
+      .filter((key) => status.get(key) === 'timedOut')
+      .map((key) => config.assets[key])
+    if (!targetReady && !targetFailed) criticalPendingPaths.push(config.targets)
+    if (targetFailed && !targetTimedOut) criticalFailedPaths.push(config.targets)
+    if (targetTimedOut) criticalTimedOutPaths.push(config.targets)
     return {
       requestedCount,
       loadedCount,
       decodedCount,
-      failedCount,
+      failedCount: currentFailedCount,
       settledCount,
       totalCount,
       progress: criticalProgress,
       criticalProgress,
       criticalReady,
       criticalFailed,
+      criticalTotal,
+      criticalCompleted,
+      criticalPendingPaths,
+      criticalFailedPaths,
+      criticalTimedOutPaths,
       criticalImageTotal,
       criticalImagesLoaded: loadedCriticalImages.size,
       criticalImagesDecoded: decodedCriticalImages.size,
       criticalTexturesReady: criticalTextures.size,
       targetReady,
       targetFailed,
+      targetTimedOut,
       maxTextureUploadMs,
       backgroundReady: decodedImages.has('background'),
       titleReady: decodedImages.has('title'),
@@ -184,6 +218,11 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     const progress = panel.querySelector('[data-page2-loading-progress]')
     const count = panel.querySelector('[data-page2-loading-count]')
     if (phaseMessage) detail.textContent = phaseMessage
+    else if (
+      current.targetReady &&
+      current.criticalImagesDecoded === current.criticalImageTotal &&
+      current.criticalTexturesReady < current.criticalImageTotal
+    ) detail.textContent = '正在建立AR场景……'
     else if (current.criticalReady) detail.textContent = '核心图景已准备，请对准第二页识别图'
     else if (current.failedCount > 0 || current.targetFailed) detail.textContent = '部分核心资源准备失败，正在使用可用内容'
     else detail.textContent = '正在准备核心图景'
@@ -245,7 +284,7 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
       } catch (error) {
         failedCount += 1
         failedKeys.add(key)
-        status.set(key, 'failed')
+        status.set(key, isTimeoutError(error) ? 'timedOut' : 'failed')
         emit()
         console.error('[page2] Preload failed', { key, url, error })
         throw error
@@ -256,18 +295,32 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   }
 
   const preloadTargets = async () => {
+    const controller = new AbortController()
     try {
-      const response = await fetch(config.targets, { cache: 'force-cache' })
+      status.set(TARGETS_TASK, 'loading')
+      emit()
+      const response = await withTimeout(
+        fetch(config.targets, { cache: 'force-cache', signal: controller.signal }),
+        ASSET_TIMEOUTS.targetFetchMs,
+        `[page2] targets.mind 加载超时：${config.targets}`,
+        config.targets,
+        () => controller.abort(),
+      )
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const buffer = await response.arrayBuffer()
       if (buffer.byteLength <= 0) throw new Error('targets.mind is empty')
       targetReady = true
+      targetFailed = false
+      targetTimedOut = false
+      status.set(TARGETS_TASK, 'ready')
       evaluateCriticalMilestones()
       emit()
       return { byteLength: buffer.byteLength }
     } catch (error) {
       targetFailed = true
+      targetTimedOut = isTimeoutError(error)
       failedKeys.add(TARGETS_TASK)
+      status.set(TARGETS_TASK, isTimeoutError(error) ? 'timedOut' : 'failed')
       emit()
       console.error('[page2] targets.mind preload failed', { url: config.targets, error })
       throw error
@@ -306,8 +359,19 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
     markCriticalTextureReady(key, uploadMs = 0) {
       if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key) || criticalTextures.has(key)) return false
       criticalTextures.add(key)
+      status.set(key, 'ready')
       maxTextureUploadMs = Math.max(maxTextureUploadMs, Number.isFinite(uploadMs) ? uploadMs : 0)
       evaluateCriticalMilestones()
+      emit()
+      return true
+    },
+    markCriticalTextureFailure(key, error) {
+      if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) return false
+      const failureStatus = isTimeoutError(error) ? 'timedOut' : 'failed'
+      criticalTextures.delete(key)
+      status.set(key, failureStatus)
+      failedKeys.add(key)
+      failedCount += 1
       emit()
       return true
     },
@@ -343,8 +407,14 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
         if (key === TARGETS_TASK) {
           targetFailed = false
           targetReady = false
+          targetTimedOut = false
+          status.delete(TARGETS_TASK)
         } else {
           imagePromises.delete(key)
+          decodedImages.delete(key)
+          loadedCriticalImages.delete(key)
+          decodedCriticalImages.delete(key)
+          criticalTextures.delete(key)
           status.set(key, 'deferred')
         }
       })

@@ -7,6 +7,7 @@ import { createPage2Particles } from './page2-particles.js'
 import { createPage2Floor } from './page2-floor.js'
 import { PAGE2_ASSET_ENTRIES, startPage2CriticalPreload } from './page2-preloader.js'
 import { PAGE2_CONFIG, PAGE2_STATES } from './page2-config.js'
+import { ASSET_TIMEOUTS, isTimeoutError, withTimeout } from '../module-asset-loader.js'
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value))
 const invalidNumericLabels = new Set()
@@ -453,6 +454,85 @@ export function createPage2Experience({
     destroy: () => { particleSystem?.destroy(); particleSystem = null },
   }
   const floorBase = createPage2Floor({ root, config, debug })
+  const backgroundImage = root.querySelector('#page2-background-asset')
+  const floorImage = root.querySelector('#page2-floor-asset')
+  const backgroundSource = new URL(config.assets.background, document.baseURI).href
+  const floorSource = new URL(config.assets.floor, document.baseURI).href
+  if (backgroundSource === floorSource) {
+    throw new Error('[page2] Background and floor must use different image URLs')
+  }
+  if (backgroundImage === floorImage) {
+    throw new Error('[page2] Background and floor must use different Image elements')
+  }
+
+  const hasFiniteObjectTransform = (object3D) => Boolean(object3D && [
+    object3D.position.x,
+    object3D.position.y,
+    object3D.position.z,
+    object3D.rotation.x,
+    object3D.rotation.y,
+    object3D.rotation.z,
+    object3D.scale.x,
+    object3D.scale.y,
+    object3D.scale.z,
+  ].every(Number.isFinite))
+
+  const getImageEntityReadiness = (entity, image, expectedSource) => {
+    const materials = []
+    entity?.object3D?.traverse((object) => {
+      if (!object.isMesh) return
+      const entries = Array.isArray(object.material) ? object.material : [object.material]
+      entries.filter(Boolean).forEach((material) => materials.push(material))
+    })
+    const mappedMaterials = materials.filter((material) => material.map?.image)
+    const textureBound = mappedMaterials.some((material) => {
+      const mapImage = material.map.image
+      return mapImage === image ||
+        (mapImage?.currentSrc && mapImage.currentSrc === expectedSource) ||
+        (mapImage?.src && mapImage.src === expectedSource)
+    })
+    const imageReady = Boolean(
+      image?.complete &&
+      image.naturalWidth > 0 &&
+      image.naturalHeight > 0 &&
+      (image.currentSrc === expectedSource || image.src === expectedSource),
+    )
+    const entityMounted = Boolean(entity?.object3D?.parent && anchor.contains(entity))
+    const entityRenderable = Boolean(
+      imageReady &&
+      textureBound &&
+      entityMounted &&
+      hasFiniteObjectTransform(entity.object3D),
+    )
+    return {
+      imageReady,
+      textureBound,
+      entityMounted,
+      entityRenderable,
+      source: image?.currentSrc || image?.src || '',
+      textureUuids: mappedMaterials.map((material) => material.map.uuid),
+    }
+  }
+
+  const getFoundationReadiness = () => {
+    const background = getImageEntityReadiness(backgroundPlane, backgroundImage, backgroundSource)
+    const floor = floorBase.getDebugState()
+    return {
+      background,
+      floor,
+      sourcesDistinct: backgroundSource !== floorSource,
+      texturesDistinct: Boolean(
+        background.textureUuids.length &&
+        floor.textureUuid &&
+        !background.textureUuids.includes(floor.textureUuid),
+      ),
+      renderable: background.entityRenderable &&
+        floor.entityRenderable &&
+        backgroundSource !== floorSource &&
+        Boolean(floor.textureUuid) &&
+        !background.textureUuids.includes(floor.textureUuid),
+    }
+  }
   let overview
   const model = createPage2Model({
     root,
@@ -607,7 +687,11 @@ export function createPage2Experience({
     pendingAnimationFrames.add(first)
   }
 
-  const waitTwoAnimationFrames = () => new Promise((resolve) => afterTwoAnimationFrames(resolve))
+  const waitTwoAnimationFrames = () => withTimeout(
+    new Promise((resolve) => afterTwoAnimationFrames(resolve)),
+    ASSET_TIMEOUTS.renderFramesMs,
+    '[page2] 等待纹理渲染帧超时',
+  )
 
   const resetPage2EntranceVisualState = () => {
     page2Runtime.entranceRunId += 1
@@ -628,6 +712,8 @@ export function createPage2Experience({
       finiteOr(config.background.startRotationX, 0, 'background.startRotationX'),
     )
     setVisible(backgroundRoot, false)
+    setVisible(backgroundPlane, false)
+    backgroundPlane.setAttribute('material', 'opacity', 0)
     model.hide()
     particles.hide()
     setDarkness(0)
@@ -760,7 +846,10 @@ export function createPage2Experience({
       entranceAnimationFinished = false
       debugLog('page2OverviewTimelineStarted', { runId: currentRunId })
     }
-    if (page2Runtime.backgroundReady && !backgroundTimelineStarted) {
+    const foundation = getFoundationReadiness()
+    if (page2Runtime.backgroundReady && foundation.renderable && !backgroundTimelineStarted) {
+      setVisible(backgroundPlane, true)
+      backgroundPlane.setAttribute('material', 'opacity', 1)
       setVisible(backgroundRoot, true)
       backgroundRoot.object3D.rotation.x = THREE.MathUtils.degToRad(
         finiteOr(config.background.startRotationX, 0, 'background.startRotationX'),
@@ -779,15 +868,24 @@ export function createPage2Experience({
     })
     if (destroyed || !tracked || suspended || !page2Runtime.entranceRequested) return
     if (!page2Runtime.trackingStable) return
+    const preloadSnapshot = preloadSession.getSnapshot()
+    if (!preloadSnapshot.criticalReady) {
+      guideText.textContent = preloadSnapshot.criticalProgress >= 100
+        ? '正在建立AR场景……'
+        : '识别成功，正在加载龙脉图景'
+      return
+    }
+    const foundation = getFoundationReadiness()
+    if (!foundation.renderable) {
+      guideText.textContent = '正在建立AR场景……'
+      return
+    }
     if (page2Runtime.entranceStarted || page2Runtime.entranceCompleted || entranceFramePending) return
     const currentRunId = page2Runtime.entranceRunId
     entranceFramePending = true
     page2EntranceProgress = 0
     backgroundElapsed = 0
-    floorBase.start(currentRunId)
-    guideText.textContent = preloadSession.getSnapshot().criticalReady
-      ? '请抬起手机，与识别图保持垂直'
-      : '识别成功，正在展开龙脉图景'
+    guideText.textContent = '正在建立AR场景……'
     setState(PAGE2_STATES.OVERVIEW_ENTERING)
     updateReadinessDebug()
     afterTwoAnimationFrames(() => {
@@ -796,7 +894,16 @@ export function createPage2Experience({
         updateReadinessDebug()
         return
       }
+      const readyAfterFrames = getFoundationReadiness()
+      if (!preloadSession.getSnapshot().criticalReady || !readyAfterFrames.renderable) {
+        guideText.textContent = '正在建立AR场景……'
+        updateReadinessDebug()
+        return
+      }
       page2Runtime.entranceStarted = true
+      floorBase.start(currentRunId)
+      preloadSession.hideLoading?.()
+      guideText.textContent = '请抬起手机，与识别图保持垂直'
       detectDepthDirection()
       maybeStartBackgroundTimeline()
       debugLog('page2EntranceStarted', { runId: currentRunId, backgroundReady: page2Runtime.backgroundReady })
@@ -838,26 +945,41 @@ export function createPage2Experience({
     const entitiesForAsset = key === 'floor'
       ? [root.querySelector('#page2-floor-base')].filter(Boolean)
       : [...root.querySelectorAll(`[data-page2-asset-key="${key}"]`)]
-    if (key === 'floor') floorBase.bindImage(imageElement)
     if (key !== 'background' && entitiesForAsset.length === 0) {
       throw new Error(`[page2] No real layer entity for asset: ${key}`)
     }
+    const expectedSource = new URL(config.assets[key], document.baseURI).href
+    if (imageElement.currentSrc !== expectedSource && imageElement.src !== expectedSource) {
+      throw new Error(`[page2] Image source mismatch for ${key}: ${imageElement.currentSrc || imageElement.src}`)
+    }
+    if (key === 'floor' && (id !== 'page2-floor-asset' || imageElement !== floorImage)) {
+      throw new Error('[page2] Floor texture received the wrong Image element')
+    }
+    if (key === 'background' && (id !== 'page2-background-asset' || imageElement !== backgroundImage)) {
+      throw new Error('[page2] Background texture received the wrong Image element')
+    }
     entitiesForAsset.forEach((entity) => {
-      const visibleWhileBinding = key === 'background'
-      entity.setAttribute('visible', visibleWhileBinding)
-      entity.object3D.visible = visibleWhileBinding
+      entity.setAttribute('visible', false)
+      entity.object3D.visible = false
       if (key !== 'floor') {
-        entity.setAttribute('material', 'opacity', key === 'background' ? 1 : 0)
+        entity.setAttribute('material', 'opacity', 0)
         entity.setAttribute('src', `#${id}`)
       }
     })
+    if (key === 'floor') floorBase.bindImage(imageElement)
     const textures = new Set()
     for (let attempt = 0; attempt < 6 && textures.size === 0; attempt += 1) {
       await waitTwoAnimationFrames()
       entitiesForAsset.forEach((entity) => entity.object3D.traverse((object) => {
         const materials = Array.isArray(object.material) ? object.material : [object.material]
         materials.filter(Boolean).forEach((material) => {
-          if (material.map) textures.add(material.map)
+          const mapImage = material.map?.image
+          if (
+            material.map &&
+            (mapImage === imageElement ||
+              mapImage?.currentSrc === expectedSource ||
+              mapImage?.src === expectedSource)
+          ) textures.add(material.map)
         })
       }))
     }
@@ -869,13 +991,19 @@ export function createPage2Experience({
     }
     const uploadStartedAt = performance.now()
     textures.forEach((texture) => {
+      texture.needsUpdate = true
       try {
         if (typeof scene.renderer?.initTexture === 'function') scene.renderer.initTexture(texture)
-        else texture.needsUpdate = true
       } catch (error) {
         texture.needsUpdate = true
         debugLog('page2TextureWarmupFallback', { key, error: error?.message || String(error) })
       }
+    })
+    await waitTwoAnimationFrames()
+    entitiesForAsset.forEach((entity) => {
+      entity.setAttribute('visible', false)
+      entity.object3D.visible = false
+      if (key !== 'floor') entity.setAttribute('material', 'opacity', 0)
     })
     const uploadMs = performance.now() - uploadStartedAt
     preloadSession.markCriticalTextureReady?.(key, uploadMs)
@@ -918,8 +1046,14 @@ export function createPage2Experience({
       updateAssetReadiness()
       return { key, status: 'loaded', url }
     })).catch((error) => {
-      assetStatus.set(key, 'failed')
+      const failureStatus = isTimeoutError(error) ? 'timedOut' : 'failed'
+      assetStatus.set(key, failureStatus)
       page2Runtime.failedAssets.set(key, { url, error: error?.message || String(error) })
+      const preloadStatus = preloadSession.getSnapshot().status.get(key)
+      if (!['failed', 'timedOut'].includes(preloadStatus)) {
+        preloadSession.markCriticalTextureFailure?.(key, error)
+      }
+      bindingPromises.delete(key)
       console.error('[page2] Asset failed', { layerId: key, fileName: url?.split('/').pop(), url, error })
       if (tracked) {
         errorNotice.textContent = '部分可视化资源加载失败，请重新扫描'
@@ -959,6 +1093,27 @@ export function createPage2Experience({
     updateAssetReadiness()
     return assetLoadingPromise
   }
+
+  const retryCriticalAssets = async () => {
+    const snapshot = preloadSession.getSnapshot()
+    const retryKeys = PAGE2_ASSET_ENTRIES
+      .map(([, key]) => key)
+      .filter((key) => ['failed', 'timedOut'].includes(snapshot.status.get(key)) || page2Runtime.failedAssets.has(key))
+    retryKeys.forEach((key) => {
+      bindingPromises.delete(key)
+      assetStatus.set(key, 'deferred')
+      page2Runtime.failedAssets.delete(key)
+    })
+    setHtmlVisible(errorNotice, false)
+    await preloadSession.retryFailed()
+    await Promise.allSettled(retryKeys.map((key) => loadAsset(key)))
+    updateAssetReadiness()
+    maybeStartPage2Entrance()
+    return preloadSession.getSnapshot()
+  }
+
+  const loadingRetryButton = root.querySelector('[data-page2-loading-retry]')
+  if (loadingRetryButton) loadingRetryButton.onclick = () => retryCriticalAssets()
 
   const unsubscribePreload = preloadSession.subscribe((snapshot) => {
     page2Runtime.resourcesLoaded = snapshot.resourcesLoaded
@@ -1229,6 +1384,7 @@ export function createPage2Experience({
   const renderDebugOutput = () => {
     const output = root.querySelector('[data-page2-debug-output]')
     if (!output) return
+    const foundation = getFoundationReadiness()
     output.textContent = JSON.stringify({
       ringCenterX: config.mainVisual.ringCenterX,
       ringCenterY: config.mainVisual.ringCenterY,
@@ -1258,6 +1414,16 @@ export function createPage2Experience({
         entranceRunId: page2Runtime.entranceRunId,
         liteMode: page2Runtime.liteMode,
         liteReason: page2Runtime.liteReason,
+        page2BackgroundImageReady: foundation.background.imageReady,
+        page2BackgroundTextureBound: foundation.background.textureBound,
+        page2BackgroundRenderable: foundation.background.entityRenderable,
+        page2FloorImageReady: foundation.floor.imageReady,
+        page2FloorTextureBound: foundation.floor.textureBound,
+        page2FloorRenderable: foundation.floor.entityRenderable,
+        page2BackgroundSource: backgroundSource,
+        page2FloorSource: floorSource,
+        page2SourcesDistinct: foundation.sourcesDistinct,
+        page2TexturesDistinct: foundation.texturesDistinct,
       },
       timing: preloadSession.getTimingReport?.(),
       preload: {

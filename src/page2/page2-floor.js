@@ -40,6 +40,8 @@ export function createPage2Floor({ root, config, debug = false }) {
   mesh.position.copy(upAxis).multiplyScalar(floor.initialClearanceUnit)
   entity.setObject3D('mesh', mesh)
   entity.object3D.visible = false
+  entity.setAttribute('visible', false)
+  mesh.visible = false
 
   const debugGroup = new THREE.Group()
   debugGroup.name = 'page2-floor-debug'
@@ -74,11 +76,36 @@ export function createPage2Floor({ root, config, debug = false }) {
   let activeRunId = 0
   let texture = null
   let textureReady = false
+  let sourceUrl = ''
+
+  const hasFiniteTransform = () => [
+    ...entity.object3D.position.toArray(),
+    ...entity.object3D.rotation.toArray().slice(0, 3),
+    ...entity.object3D.scale.toArray(),
+  ].every(Number.isFinite)
+
+  const isRenderable = () => Boolean(
+    entity.object3D.parent &&
+    mesh.parent &&
+    material &&
+    material.map &&
+    material.map.image &&
+    textureReady &&
+    hasFiniteTransform(),
+  )
 
   const bindImage = (image) => {
     if (!image?.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
       throw new Error(`[page2] Floor image is not decoded: ${floor.texture}`)
     }
+    const expectedUrl = new URL(floor.texture, document.baseURI).href
+    if (image.currentSrc !== expectedUrl && image.src !== expectedUrl) {
+      throw new Error(`[page2] Floor image source mismatch: ${image.currentSrc || image.src}`)
+    }
+    entity.object3D.visible = false
+    entity.setAttribute('visible', false)
+    mesh.visible = false
+    material.opacity = 0
     texture?.dispose?.()
     texture = new THREE.Texture(image)
     texture.colorSpace = THREE.SRGBColorSpace
@@ -86,6 +113,7 @@ export function createPage2Floor({ root, config, debug = false }) {
     material.map = texture
     material.needsUpdate = true
     textureReady = true
+    sourceUrl = expectedUrl
     return texture
   }
 
@@ -93,8 +121,9 @@ export function createPage2Floor({ root, config, debug = false }) {
     activeRunId = runId
     active = false
     elapsed = 0
-    entity.object3D.visible = floor.enabled
-    mesh.visible = floor.enabled
+    entity.object3D.visible = false
+    entity.setAttribute('visible', false)
+    mesh.visible = false
     mesh.position.copy(upAxis).multiplyScalar(floor.initialClearanceUnit)
     material.opacity = 0
   }
@@ -105,7 +134,12 @@ export function createPage2Floor({ root, config, debug = false }) {
     reset,
     start(runId) {
       reset(runId)
-      active = floor.enabled
+      if (!floor.enabled || !isRenderable()) return false
+      entity.object3D.visible = true
+      entity.setAttribute('visible', true)
+      mesh.visible = true
+      active = true
+      return true
     },
     update(delta, runId) {
       if (!active || runId !== activeRunId) return
@@ -119,14 +153,19 @@ export function createPage2Floor({ root, config, debug = false }) {
     },
     showFinal() {
       active = false
-      entity.object3D.visible = floor.enabled
-      mesh.visible = floor.enabled
+      const visible = floor.enabled && isRenderable()
+      entity.object3D.visible = visible
+      entity.setAttribute('visible', visible)
+      mesh.visible = visible
       mesh.position.copy(upAxis).multiplyScalar(floor.clearanceUnit)
-      material.opacity = floor.opacity
+      material.opacity = visible ? floor.opacity : 0
     },
     hide() {
       active = false
       entity.object3D.visible = false
+      entity.setAttribute('visible', false)
+      mesh.visible = false
+      material.opacity = 0
     },
     getDebugState() {
       const world = new THREE.Vector3()
@@ -138,7 +177,13 @@ export function createPage2Floor({ root, config, debug = false }) {
         clearanceMm: floor.clearanceMm,
         clearanceUnit: floor.clearanceUnit,
         opacity: material.opacity,
+        imageReady: Boolean(texture?.image?.complete && texture.image.naturalWidth > 0 && texture.image.naturalHeight > 0),
+        textureBound: Boolean(material.map && material.map.image),
         textureReady,
+        entityMounted: Boolean(entity.object3D.parent && mesh.parent),
+        entityRenderable: isRenderable(),
+        sourceUrl,
+        textureUuid: texture?.uuid || null,
         scale: mesh.scale.toArray(),
         rotationDegrees: [
           THREE.MathUtils.radToDeg(mesh.rotation.x),
