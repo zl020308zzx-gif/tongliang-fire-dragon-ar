@@ -547,6 +547,37 @@ export function createPage2Model({
       setVisible(modelRoot, false)
       setVisible(hotspotRoot, false)
     },
+    release() {
+      activePointers.clear()
+      entranceRequested = false
+      entranceActive = false
+      setVisible(modelRoot, false)
+      setVisible(hotspotRoot, false)
+      const modelObject = modelEntity.getObject3D('mesh')
+      modelObject?.traverse((object) => {
+        if (!object.isMesh) return
+        object.geometry?.dispose?.()
+        const materials = Array.isArray(object.material) ? object.material : [object.material]
+        materials.filter(Boolean).forEach((material) => {
+          ;[
+            'map',
+            'alphaMap',
+            'aoMap',
+            'emissiveMap',
+            'normalMap',
+            'roughnessMap',
+            'metalnessMap',
+          ].forEach((key) => material[key]?.dispose?.())
+          material.dispose?.()
+        })
+      })
+      modelEntity.removeAttribute('gltf-model')
+      originalMaterials.clear()
+      loaded = false
+      loading = false
+      layoutReady = false
+      baseScale = 1
+    },
     setHotspotDebugVisible(visible) {
       axes.visible = visible
       debugBoxHelper.visible = visible

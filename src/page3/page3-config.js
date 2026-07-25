@@ -1,7 +1,10 @@
 import { assetUrl } from '../asset-url.js'
 import { SHARED_FOLDOUT_LAYOUT, cloneVector } from '../shared-foldout-layout.js'
+import { IS_IOS_MOBILE, selectPageImageRoot } from '../platform-assets.js'
 
 const page3Asset = (path) => assetUrl(`assets/page3/${path}`)
+const page3ImageRoot = selectPageImageRoot('page3', 'page3-mobile')
+const page3ImageAsset = (path) => assetUrl(`assets/${page3ImageRoot}/${path}`)
 const markerAspect = 1491 / 1055
 const canvasWidth = 1.02
 const canvasHeight = canvasWidth * 1.5
@@ -27,22 +30,23 @@ export const PAGE3_STATES = Object.freeze({
 })
 
 export const PAGE3_CONFIG = {
+  mobileAssets: IS_IOS_MOBILE,
   targetIndex: 2,
   markerAspect,
   targets: assetUrl('assets/markers/targets.mind'),
   markerImage: assetUrl('assets/markers/marker-page3.png'),
   assets: {
-    background: page3Asset('background/page3-bg-board.png'),
-    floor: page3Asset('background/page3-floor-base.png'),
-    cloudBack: page3Asset('clouds/page3-cloud-back.png'),
-    cloudMiddle: page3Asset('clouds/page3-cloud-middle.png'),
-    cloudFront: page3Asset('clouds/page3-cloud-front.png'),
-    title: page3Asset('title/page3-title-fire-night.png'),
-    stageBack: page3Asset('stage/page3-stage-back.png'),
-    stageFront: page3Asset('stage/page3-stage-front.png'),
-    stageLights: page3Asset('stage/page3-stage-lights.png'),
-    drum: page3Asset('props/page3-drum-main.png'),
-    pearl: page3Asset('props/page3-dragon-pearl.png'),
+    background: page3ImageAsset('background/page3-bg-board.png'),
+    floor: page3ImageAsset('background/page3-floor-base.png'),
+    cloudBack: page3ImageAsset('clouds/page3-cloud-back.png'),
+    cloudMiddle: page3ImageAsset('clouds/page3-cloud-middle.png'),
+    cloudFront: page3ImageAsset('clouds/page3-cloud-front.png'),
+    title: page3ImageAsset('title/page3-title-fire-night.png'),
+    stageBack: page3ImageAsset('stage/page3-stage-back.png'),
+    stageFront: page3ImageAsset('stage/page3-stage-front.png'),
+    stageLights: page3ImageAsset('stage/page3-stage-lights.png'),
+    drum: page3ImageAsset('props/page3-drum-main.png'),
+    pearl: page3ImageAsset('props/page3-dragon-pearl.png'),
     dragonWebm: page3Asset('performance/page3-perf-dragon.webm'),
     ironflowerWebm: page3Asset('performance/page3-perf-ironflower.webm'),
     dragonGreenMp4: page3Asset('performance/page3-perf-dragon-green.mp4'),
@@ -272,10 +276,16 @@ export const PAGE3_IMAGE_ENTRIES = Object.freeze([
 export const PAGE3_CRITICAL_IMAGE_KEYS = Object.freeze([
   'background',
   'floor',
+  'title',
+  'drum',
+])
+
+export const PAGE3_DEFERRED_IMAGE_KEYS = Object.freeze([
+  'stageBack',
   'cloudBack',
   'cloudMiddle',
   'cloudFront',
-  'title',
-  'stageBack',
-  'drum',
+  'stageFront',
+  'stageLights',
+  'pearl',
 ])

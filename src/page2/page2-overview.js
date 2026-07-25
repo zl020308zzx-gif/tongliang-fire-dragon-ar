@@ -544,6 +544,16 @@ export function createPage2Overview({
       })
       return true
     },
+    forgetAssets(assetKeys = []) {
+      assetKeys.forEach((assetKey) => {
+        readyAssets.delete(assetKey)
+        ;(layersByAsset.get(assetKey) || []).forEach((key) => {
+          readyAtElapsed.delete(key)
+          lateReveals.delete(key)
+          setVisible(entities.get(key), false)
+        })
+      })
+    },
     resetEntry,
     startEntry() {
       resetEntry()

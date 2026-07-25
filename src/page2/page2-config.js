@@ -1,7 +1,9 @@
 import { assetUrl } from '../asset-url.js'
 import { SHARED_FOLDOUT_LAYOUT } from '../shared-foldout-layout.js'
+import { IS_IOS_MOBILE, selectPageImageRoot } from '../platform-assets.js'
 
-const page2Asset = (path) => assetUrl(`assets/page2/${path}`)
+const page2ImageRoot = selectPageImageRoot('page2', 'page2-mobile')
+const page2Asset = (path) => assetUrl(`assets/${page2ImageRoot}/${path}`)
 
 export const PAGE2_STATES = Object.freeze({
   HIDDEN: 'PAGE2_HIDDEN',
@@ -80,6 +82,7 @@ const layers = layerKeys.map((key, layerIndex) => {
 })
 
 export const PAGE2_CONFIG = {
+  mobileAssets: IS_IOS_MOBILE,
   targetIndex: 1,
   overviewStableDelay: 250,
   overviewSequence: {

@@ -73,8 +73,8 @@ const loadAndDecodeImage = async (img, url, onLoaded) => {
     loadTimeoutMs: 15000,
     decodeTimeoutMs: 6000,
     allowDecodeFallback: true,
+    onLoaded,
   })
-  onLoaded()
   return ready
 }
 
@@ -90,17 +90,13 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   if (existing?.rootImage === currentBackgroundImage) return existing
 
   const pageOpenedAt = performance.now()
-  addImagePreload(config.assets.floor)
-  addImagePreload(config.assets.background)
-  addImagePreload(config.assets.title)
-
   const imagePromises = new Map()
   const decodedImages = new Map()
   const status = new Map(PAGE2_ASSET_ENTRIES.map(([, key]) => [key, 'deferred']))
   const listeners = new Set()
   const loadedCriticalImages = new Set()
   const decodedCriticalImages = new Set()
-  const criticalTextures = new Set()
+  const gpuReady = new Set()
   const timingEvents = Object.create(null)
   const timingDetails = Object.create(null)
   const timers = new Set()
@@ -117,6 +113,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   let uiDismissed = false
   let phaseMessage = ''
   let destroyed = false
+  let currentLoadingPath = ''
+  let generation = 0
   const entryState = {
     targetFound: false,
     pendingEnter: false,
@@ -132,14 +130,6 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   }
 
   markTiming('pageOpened', null, pageOpenedAt)
-  markTiming('criticalPreloadStarted')
-
-  const criticalAssetDiagnostics = PAGE2_CRITICAL_IMAGE_KEYS
-    .map((name) => ({ name, url: config.assets[name] }))
-  console.info(`PAGE2 ASSET START:
-${criticalAssetDiagnostics
-    .map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`)
-    .join('\n')}`)
 
   const getTimingReport = () => {
     const events = Object.fromEntries(Object.entries(timingEvents).map(([key, value]) => [key, Math.round(value - pageOpenedAt)]))
@@ -171,10 +161,10 @@ ${criticalAssetDiagnostics
       .length
     const criticalImageTotal = PAGE2_CRITICAL_IMAGE_KEYS.length
     const criticalTotal = criticalImageTotal
-    const criticalCompleted = criticalTextures.size
+    const criticalCompleted = PAGE2_CRITICAL_IMAGE_KEYS.filter((key) => gpuReady.has(key)).length
     const criticalProgress = Math.min(100, (criticalCompleted / criticalTotal) * 100)
     const criticalReady = decodedCriticalImages.size === criticalImageTotal
-      && criticalTextures.size === criticalImageTotal
+      && criticalCompleted === criticalImageTotal
     const criticalFailed = PAGE2_CRITICAL_IMAGE_KEYS
       .some((key) => ['failed', 'timedOut'].includes(status.get(key)))
     const criticalPendingPaths = PAGE2_CRITICAL_IMAGE_KEYS
@@ -205,7 +195,11 @@ ${criticalAssetDiagnostics
       criticalImageTotal,
       criticalImagesLoaded: loadedCriticalImages.size,
       criticalImagesDecoded: decodedCriticalImages.size,
-      criticalTexturesReady: criticalTextures.size,
+      criticalTexturesReady: criticalCompleted,
+      gpuReadyCount: gpuReady.size,
+      currentLoadingPath,
+      currentModule: entryState.targetFound ? 'page2' : null,
+      mobileAssets: Boolean(config.mobileAssets),
       targetReady,
       targetFailed,
       targetTimedOut,
@@ -268,11 +262,13 @@ ${criticalAssetDiagnostics
     if (current.criticalReady) {
       phaseMessage = ''
       markTiming('criticalTexturesReady', { maxTextureUploadMs })
+      markTiming('criticalGpuReady', { gpuReadyCount: current.gpuReadyCount })
     }
   }
 
   const preloadImage = (key) => {
     if (imagePromises.has(key)) return imagePromises.get(key)
+    const requestGeneration = generation
     const entry = PAGE2_ASSET_ENTRIES.find(([, assetKey]) => assetKey === key)
     const img = entry ? root.querySelector(`#${entry[0]}`) : null
     const url = config.assets[key]
@@ -280,6 +276,7 @@ ${criticalAssetDiagnostics
       const loadStartedAt = performance.now()
       if (!(img instanceof HTMLImageElement)) throw new Error(`[page2] Missing image element: ${url}`)
       requestedCount += 1
+      currentLoadingPath = url
       status.set(key, 'loading')
       emit()
       try {
@@ -287,12 +284,15 @@ ${criticalAssetDiagnostics
         const ready = await loadAndDecodeImage(img, url, () => {
           if (loadRecorded) return
           loadRecorded = true
-          loadedCount += 1
-          status.set(key, 'decoding')
-          if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) loadedCriticalImages.add(key)
-          evaluateCriticalMilestones()
-          emit()
+          if (requestGeneration === generation) {
+            loadedCount += 1
+            status.set(key, 'decoding')
+            if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) loadedCriticalImages.add(key)
+            evaluateCriticalMilestones()
+            emit()
+          }
         })
+        if (requestGeneration !== generation) return ready
         decodedCount += 1
         decodedImages.set(key, ready)
         status.set(key, 'decoded')
@@ -308,10 +308,13 @@ height: ${ready.naturalHeight}`)
         }
         return ready
       } catch (error) {
-        failedCount += 1
-        failedKeys.add(key)
-        status.set(key, isTimeoutError(error) ? 'timedOut' : 'failed')
-        emit()
+        if (requestGeneration !== generation) return null
+        if (requestGeneration === generation) {
+          failedCount += 1
+          failedKeys.add(key)
+          status.set(key, isTimeoutError(error) ? 'timedOut' : 'failed')
+          emit()
+        }
         if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) {
           console.error(`PAGE2 ASSET FAILED:
 name: ${key}
@@ -320,6 +323,9 @@ error: ${error?.message || String(error)}`, error)
         }
         console.error('[page2] Preload failed', { key, url, error })
         throw error
+      } finally {
+        if (requestGeneration === generation && currentLoadingPath === url) currentLoadingPath = ''
+        if (requestGeneration === generation) emit()
       }
     })()
     imagePromises.set(key, promise)
@@ -369,8 +375,17 @@ rejected数量: ${rejectedAssets.length}
       return added
     },
     markCriticalTextureReady(key, uploadMs = 0) {
-      if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key) || criticalTextures.has(key)) return false
-      criticalTextures.add(key)
+      if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key) || gpuReady.has(key)) return false
+      gpuReady.add(key)
+      status.set(key, 'ready')
+      maxTextureUploadMs = Math.max(maxTextureUploadMs, Number.isFinite(uploadMs) ? uploadMs : 0)
+      evaluateCriticalMilestones()
+      emit()
+      return true
+    },
+    markTextureReady(key, uploadMs = 0) {
+      if (gpuReady.has(key)) return false
+      gpuReady.add(key)
       status.set(key, 'ready')
       maxTextureUploadMs = Math.max(maxTextureUploadMs, Number.isFinite(uploadMs) ? uploadMs : 0)
       evaluateCriticalMilestones()
@@ -380,7 +395,7 @@ rejected数量: ${rejectedAssets.length}
     markCriticalTextureFailure(key, error) {
       if (!PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) return false
       const failureStatus = isTimeoutError(error) ? 'timedOut' : 'failed'
-      criticalTextures.delete(key)
+      gpuReady.delete(key)
       status.set(key, failureStatus)
       failedKeys.add(key)
       failedCount += 1
@@ -390,6 +405,21 @@ name: ${key}
 url: ${config.assets[key]}
 error: ${error?.message || String(error)}`, error)
       return true
+    },
+    startCritical() {
+      if (session.criticalPromise) return session.criticalPromise
+      markTiming('criticalPreloadStarted')
+      addImagePreload(config.assets.floor)
+      addImagePreload(config.assets.background)
+      addImagePreload(config.assets.title)
+      const diagnostics = PAGE2_CRITICAL_IMAGE_KEYS
+        .map((name) => ({ name, url: config.assets[name] }))
+      console.info(`PAGE2 ASSET START:
+${diagnostics.map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`).join('\n')}`)
+      session.criticalPromise = runQueue([...criticalQueue])
+      session.promise = session.criticalPromise
+      emit()
+      return session.criticalPromise
     },
     setPhaseMessage(message = '') {
       phaseMessage = message
@@ -406,6 +436,7 @@ error: ${error?.message || String(error)}`, error)
       imagePromises.delete(key)
       decodedImages.delete(key)
       failedKeys.delete(key)
+      gpuReady.delete(key)
       status.set(key, 'deferred')
       emit()
       return true
@@ -438,7 +469,7 @@ error: ${error?.message || String(error)}`, error)
         decodedImages.delete(key)
         loadedCriticalImages.delete(key)
         decodedCriticalImages.delete(key)
-        criticalTextures.delete(key)
+        gpuReady.delete(key)
         status.set(key, 'deferred')
       })
       failedCount = Math.max(0, failedCount - retryQueue.length)
@@ -448,6 +479,30 @@ error: ${error?.message || String(error)}`, error)
       session.criticalPromise = runQueue(retryQueue)
       session.promise = session.criticalPromise
       return session.criticalPromise.then(() => snapshot())
+    },
+    releaseAssets(keys = PAGE2_ASSET_ENTRIES.map(([, key]) => key)) {
+      generation += 1
+      currentLoadingPath = ''
+      keys.forEach((key) => {
+        imagePromises.delete(key)
+        decodedImages.delete(key)
+        failedKeys.delete(key)
+        loadedCriticalImages.delete(key)
+        decodedCriticalImages.delete(key)
+        gpuReady.delete(key)
+        status.set(key, 'deferred')
+        const entry = PAGE2_ASSET_ENTRIES.find(([, entryKey]) => entryKey === key)
+        const image = entry ? root.querySelector(`#${entry[0]}`) : null
+        if (image instanceof HTMLImageElement) {
+          image.removeAttribute('src')
+          image.dataset.loaded = 'false'
+        }
+      })
+      if (keys.some((key) => PAGE2_CRITICAL_IMAGE_KEYS.includes(key))) {
+        session.criticalPromise = null
+        session.promise = null
+      }
+      emit()
     },
     destroy() {
       destroyed = true
@@ -461,11 +516,6 @@ error: ${error?.message || String(error)}`, error)
   const retryButton = root.querySelector('[data-page2-loading-retry]')
   if (retryButton) retryButton.onclick = () => session.retryFailed()
   emit()
-  session.criticalPromise = runQueue([...criticalQueue])
-  // Non-critical modules are intentionally left deferred here. The overview
-  // scheduler requests them roughly one second before their own stage, keeping
-  // the camera/recognition phase free from avoidable image decoding work.
-  session.promise = session.criticalPromise
   return session
 }
 

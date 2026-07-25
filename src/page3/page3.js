@@ -4,12 +4,17 @@ import { PAGE3_CONTENT } from './page3-content.js'
 import {
   PAGE3_CONFIG,
   PAGE3_CRITICAL_IMAGE_KEYS,
+  PAGE3_DEFERRED_IMAGE_KEYS,
   PAGE3_IMAGE_ENTRIES,
   PAGE3_STATES,
 } from './page3-config.js'
 import { createPage3Effects } from './page3-effects.js'
 import { createPage3Preloader } from './page3-preloader.js'
 import { getModuleEntryVisibility } from '../shared-module-ui.js'
+import {
+  disposeAFrameImageTextures,
+  prepareAFrameImageTexture,
+} from '../aframe-texture-preloader.js'
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value))
 const lerp = (from, to, progress) => from + (to - from) * progress
@@ -297,7 +302,11 @@ export const page3UiMarkup = (config = PAGE3_CONFIG, debug = false) => `
     <p>page3RootVisible <b data-page3-debug-root-visible>false</b></p>
     <p>foundation frames <b data-page3-debug-foundation-frames>0 / ${config.foundation.readyRenderFrames}</b></p>
     <p>critical <b data-page3-debug-critical-count>0 / ${PAGE3_CRITICAL_IMAGE_KEYS.length}</b></p>
+    <p>请求 / GPU <b data-page3-debug-load-count>0 / 0</b></p>
+    <p>当前资源 <b data-page3-debug-current-path>—</b></p>
+    <p>移动纹理 <b data-page3-debug-mobile-assets>${String(config.mobileAssets)}</b></p>
     <pre data-page3-debug-critical-assets>等待关键资源状态</pre>
+    <pre data-page3-debug-timings></pre>
     <p>FPS <b data-page3-debug-fps>0</b></p>
     <button type="button" data-page3-debug-action="simulate">模拟识别</button>
     <button type="button" data-page3-debug-action="drum">模拟击鼓</button>
@@ -397,6 +406,10 @@ export function createPage3Experience({
   const errorText = root.querySelector('[data-page3-error-text]')
   const effects = createPage3Effects({ root, config })
   const THREE = window.AFRAME.THREE
+  const gpuReadyAssets = new Set()
+  const gpuBindingPromises = new Map()
+  let gpuBindingChain = Promise.resolve()
+  let assetBindingGeneration = 0
   const raycaster = new THREE.Raycaster()
   const pointer = new THREE.Vector2()
   const pearlCurve = new THREE.CatmullRomCurve3(
@@ -691,6 +704,131 @@ export function createPage3Experience({
     renderDebug()
     queueMicrotask(() => tryEnterPage3())
   }
+
+  const revealDeferredImage = (key, entities) => {
+    if (!moduleEntered || !tracked) return
+    if (['cloudBack', 'cloudMiddle', 'cloudFront'].includes(key)) {
+      const opacity = key === 'cloudBack'
+        ? config.clouds.back.opacityMin
+        : key === 'cloudMiddle'
+          ? config.clouds.middle.opacityMin
+          : config.clouds.front.opacityMin
+      entities.forEach((entity) => {
+        setVisible(entity, true)
+        setOpacity(entity, opacity)
+      })
+    }
+  }
+
+  const queueTextureBinding = (id, key) => {
+    if (gpuReadyAssets.has(key) || gpuBindingPromises.has(key)) return
+    const image = root.querySelector(`#${id}`)
+    const entities = [...root.querySelectorAll(`[data-page3-asset-key="${key}"]`)]
+    if (!(image instanceof HTMLImageElement) || !entities.length) {
+      preloaderSession.markGpuFailure(key, new Error(`[page3] 缺少纹理绑定对象：${key}`))
+      return
+    }
+    entities.forEach((entity) => {
+      setVisible(entity, false)
+      setOpacity(entity, 0)
+    })
+    const bindingGeneration = assetBindingGeneration
+    const binding = gpuBindingChain
+      .catch(() => {})
+      .then(async () => {
+        const prepared = await prepareAFrameImageTexture({
+          scene,
+          entities,
+          image,
+          assetKey: key,
+          gpuReady: gpuReadyAssets,
+        })
+        if (bindingGeneration !== assetBindingGeneration) {
+          disposeAFrameImageTextures({
+            entities,
+            assetKey: key,
+            gpuReady: gpuReadyAssets,
+          })
+          return
+        }
+        entities.forEach((entity) => {
+          entity.dataset.page3Bound = 'true'
+          applyRenderOrder(entity, Number(entity.dataset.renderOrder))
+        })
+        preloaderSession.markGpuReady(key, {
+          textureCount: prepared.textureCount,
+          width: prepared.width,
+          height: prepared.height,
+        })
+        if (key === 'stageBack') {
+          preloaderSession.markTiming?.('firstMainContentVisible', {
+            assetKey: key,
+            gpuReadyCount: gpuReadyAssets.size,
+          })
+        }
+        revealDeferredImage(key, entities)
+      })
+      .catch((error) => {
+        if (bindingGeneration !== assetBindingGeneration) return
+        gpuReadyAssets.delete(key)
+        entities.forEach((entity) => {
+          delete entity.dataset.page3Bound
+          setVisible(entity, false)
+        })
+        preloaderSession.markGpuFailure(key, error)
+        console.error(`[page3] GPU 纹理预热失败：${key}`, {
+          path: config.assets[key],
+          error,
+        })
+      })
+      .finally(() => {
+        gpuBindingPromises.delete(key)
+      })
+    gpuBindingPromises.set(key, binding)
+    gpuBindingChain = binding
+  }
+
+  const releasePage3ImageTextures = () => {
+    assetBindingGeneration += 1
+    PAGE3_IMAGE_ENTRIES.forEach(([, key]) => {
+      const entities = [...root.querySelectorAll(`[data-page3-asset-key="${key}"]`)]
+      disposeAFrameImageTextures({
+        entities,
+        assetKey: key,
+        gpuReady: gpuReadyAssets,
+      })
+      entities.forEach((entity) => {
+        delete entity.dataset.page3Bound
+        entity.removeAttribute('src')
+      })
+    })
+    gpuBindingPromises.clear()
+    gpuBindingChain = Promise.resolve()
+    preloaderSession.releaseAssets()
+    criticalReady = false
+    deferredSettled = false
+    stageAssetsReady = false
+  }
+
+  const bindGpuReadyAssets = (snapshot) => {
+    PAGE3_IMAGE_ENTRIES.forEach(([id, key]) => {
+      if (snapshot.status.get(key) === 'ready' && !gpuReadyAssets.has(key)) {
+        queueTextureBinding(id, key)
+      }
+    })
+    criticalReady = snapshot.criticalReady
+    deferredSettled = snapshot.deferredSettled
+    loadingProgress.textContent = `${Math.round(snapshot.criticalProgress || 0)}%`
+    stageAssetsReady = PAGE3_DEFERRED_IMAGE_KEYS.every(
+      (key) => snapshot.status.get(key) === 'ready' && snapshot.gpuReady.has(key),
+    )
+    dragonReady = snapshot.status.get('dragonVideo') === 'ready'
+    ironflowerReady = snapshot.status.get('ironflowerVideo') === 'ready'
+    const failedPaths = [...snapshot.errors.values()].map((failure) => failure.path)
+    if (failedPaths.length) showError(`部分资源加载失败：${failedPaths.join('、')}`)
+    renderDebug()
+    queueMicrotask(() => tryEnterPage3())
+  }
   const setTransform = (entity, { position, rotation, scale } = {}) => {
     if (!entity?.object3D) return
     if (position) {
@@ -729,6 +867,7 @@ export function createPage3Experience({
   }
 
   const isTextureReady = (assetKey, entity) => {
+    if (!gpuReadyAssets.has(assetKey)) return false
     const assetEntry = PAGE3_IMAGE_ENTRIES.find(([, key]) => key === assetKey)
     const image = assetEntry ? root.querySelector(`#${assetEntry[0]}`) : null
     if (!(image instanceof HTMLImageElement) || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
@@ -789,6 +928,7 @@ export function createPage3Experience({
         image.naturalHeight > 0 &&
         (image.currentSrc === expectedSource || image.src === expectedSource),
       )
+      const gpuReady = gpuReadyAssets.has(key)
       const entityStates = entities.map((entity) => {
         const materials = []
         entity.object3D?.traverse((object) => {
@@ -811,6 +951,7 @@ export function createPage3Experience({
           entityMounted,
           entityRenderable: Boolean(
             imageReady &&
+            gpuReady &&
             textureBound &&
             entityMounted &&
             hasFiniteEntityTransform(entity),
@@ -824,6 +965,7 @@ export function createPage3Experience({
         path: config.assets[key],
         imageStatus: preloadSnapshot.status.get(key) || 'idle',
         imageReady,
+        gpuReady,
         textureBound: entities.length > 0 && entityStates.every((item) => item.textureBound),
         entityMounted: entities.length > 0 && entityStates.every((item) => item.entityMounted),
         entityRenderable: entities.length > 0 && entityStates.every((item) => item.entityRenderable),
@@ -1076,17 +1218,17 @@ export function createPage3Experience({
     setVisible(background, true)
     setVisible(floor, true)
     setVisible(title, true)
-    setVisible(cloudBack, true)
-    setVisible(cloudMiddle, true)
-    setVisible(cloudFront, true)
+    setVisible(cloudBack, gpuReadyAssets.has('cloudBack'))
+    setVisible(cloudMiddle, gpuReadyAssets.has('cloudMiddle'))
+    setVisible(cloudFront, gpuReadyAssets.has('cloudFront'))
     setVisible(drumRoot, true)
     setVisible(drumPlane, true)
     setOpacity(background, 1)
     setOpacity(floor, 1)
     setOpacity(title, 1)
-    setOpacity(cloudBack, config.clouds.back.opacityMin)
-    setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
-    setOpacity(cloudFront, config.clouds.front.opacityMin)
+    if (gpuReadyAssets.has('cloudBack')) setOpacity(cloudBack, config.clouds.back.opacityMin)
+    if (gpuReadyAssets.has('cloudMiddle')) setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
+    if (gpuReadyAssets.has('cloudFront')) setOpacity(cloudFront, config.clouds.front.opacityMin)
     setOpacity(drumPlane, 1)
     applyRenderOrder(background, config.layout.backgroundBoard.renderOrder)
     applyRenderOrder(floor, config.layout.floor.renderOrder)
@@ -1114,13 +1256,20 @@ export function createPage3Experience({
     setOpacity(background, lerp(0.18, 1, openProgress))
     setOpacity(title, lerp(0.12, 1, openProgress))
     const finalContentVisible = rawOpenProgress >= 1
-    ;[cloudBack, cloudMiddle, cloudFront, drumRoot, drumPlane].forEach((entity) => {
+    ;[
+      [cloudBack, 'cloudBack'],
+      [cloudMiddle, 'cloudMiddle'],
+      [cloudFront, 'cloudFront'],
+    ].forEach(([entity, key]) => {
+      setVisible(entity, finalContentVisible && gpuReadyAssets.has(key))
+    })
+    ;[drumRoot, drumPlane].forEach((entity) => {
       setVisible(entity, finalContentVisible)
     })
     if (finalContentVisible) {
-      setOpacity(cloudBack, config.clouds.back.opacityMin)
-      setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
-      setOpacity(cloudFront, config.clouds.front.opacityMin)
+      if (gpuReadyAssets.has('cloudBack')) setOpacity(cloudBack, config.clouds.back.opacityMin)
+      if (gpuReadyAssets.has('cloudMiddle')) setOpacity(cloudMiddle, config.clouds.middle.opacityMin)
+      if (gpuReadyAssets.has('cloudFront')) setOpacity(cloudFront, config.clouds.front.opacityMin)
       setOpacity(drumPlane, 1)
     }
     placementGuideActive = false
@@ -1153,7 +1302,7 @@ export function createPage3Experience({
     return foundationReady
   }
 
-  const unsubscribePreloader = preloaderSession.subscribe(bindReadyAssets)
+  const unsubscribePreloader = preloaderSession.subscribe(bindGpuReadyAssets)
 
   const resetVisuals = () => {
     foundationRenderFrames = 0
@@ -1317,6 +1466,12 @@ export function createPage3Experience({
     const criticalScene = getCriticalSceneReadiness()
     root.querySelector('[data-page3-debug-critical-count]').textContent =
       `${preloadSnapshot.criticalCompleted} / ${preloadSnapshot.criticalTotal}`
+    root.querySelector('[data-page3-debug-load-count]').textContent =
+      `${preloadSnapshot.requestCount} / ${preloadSnapshot.gpuReadyCount}`
+    root.querySelector('[data-page3-debug-current-path]').textContent =
+      preloadSnapshot.currentLoadingPath || '—'
+    root.querySelector('[data-page3-debug-mobile-assets]').textContent =
+      String(preloadSnapshot.mobileAssets)
     root.querySelector('[data-page3-debug-critical-assets]').textContent = JSON.stringify({
       criticalTexturesBound: criticalScene.criticalTexturesBound,
       criticalEntitiesMounted: criticalScene.criticalEntitiesMounted,
@@ -1326,6 +1481,8 @@ export function createPage3Experience({
       criticalTimedOutPaths: preloadSnapshot.criticalTimedOutPaths,
       assets: criticalScene.assets,
     }, null, 2)
+    root.querySelector('[data-page3-debug-timings]').textContent =
+      JSON.stringify(preloaderSession.getTimingReport?.() || {}, null, 2)
     root.querySelector('[data-page3-debug-fps]').textContent = String(fps)
   }
 
@@ -1375,8 +1532,13 @@ export function createPage3Experience({
       placementGuide.hidden = true
       foundationRenderFrames = config.foundation.readyRenderFrames
       foundationReady = true
+      preloaderSession.markTiming?.('firstFoundationVisible', {
+        gpuReadyCount: gpuReadyAssets.size,
+      })
       preloaderSession.loadStageAssets().catch((error) => showError(error.message))
-      preloaderSession.loadDragonAssets().catch((error) => showError(error.message))
+      preloaderSession.loadDrumAudio().catch((error) => {
+        console.warn('[page3] 战鼓音效后台加载失败', error)
+      })
     } else if (state === PAGE3_STATES.STAGE_BUILDING) {
       setVisible(stageBack, true)
       setVisible(stageFront, true)
@@ -1500,6 +1662,12 @@ export function createPage3Experience({
     drumEnabled = false
     drumHitCount += 1
     unlockAudio()
+    if (drumHitCount === 1) {
+      preloaderSession.loadDrumAudio().catch((error) => {
+        console.warn('[page3] 战鼓音效加载失败，继续舞台流程', error)
+      })
+      preloaderSession.loadDragonAssets().catch((error) => showError(error.message))
+    }
     playDrumSound()
     playDrumFeedback()
     if (state === PAGE3_STATES.READY) setPage3State(PAGE3_STATES.STAGE_BUILDING)
@@ -1572,7 +1740,7 @@ export function createPage3Experience({
       else if (action === 'retry') {
         hideError()
         preloaderSession.retryFailed().then(() => {
-          if ([PAGE3_STATES.HIDDEN, PAGE3_STATES.LOADING].includes(state)) return preloaderSession.loadCritical()
+          if ([PAGE3_STATES.HIDDEN, PAGE3_STATES.LOADING].includes(state)) return preloaderSession.startCritical()
           if ([PAGE3_STATES.READY, PAGE3_STATES.STAGE_BUILDING, PAGE3_STATES.WAIT_PEARL].includes(state)) {
             return preloaderSession.loadStageAssets()
           }
@@ -1644,6 +1812,7 @@ export function createPage3Experience({
     }
     suspended = false
     tracked = true
+    preloaderSession.markTiming?.('targetFound')
     lostStartedAt = 0
     pendingEnter = state === PAGE3_STATES.HIDDEN || state === PAGE3_STATES.LOADING
     moduleEntered = !pendingEnter
@@ -1656,7 +1825,7 @@ export function createPage3Experience({
     lostNotice.hidden = true
     ui.hidden = false
     syncEntryUi()
-    preloaderSession.loadCritical()
+    preloaderSession.startCritical()
       .then(() => tryEnterPage3())
       .catch((error) => {
         showError(error.message)
@@ -1966,7 +2135,7 @@ export function createPage3Experience({
       onActivate?.()
       ui.hidden = false
       syncEntryUi()
-      preloaderSession.loadCritical().then(() => {
+      preloaderSession.startCritical().then(() => {
         placeDebugAnchor()
         setPage3State(PAGE3_STATES.LOADING)
       }).catch((error) => showError(error.message))
@@ -2015,17 +2184,34 @@ export function createPage3Experience({
 
   return {
     startAssetLoading() {
-      return preloaderSession.loadCritical()
+      return preloaderSession.startCritical()
+    },
+    notifySceneLoaded(at = performance.now()) {
+      preloaderSession.markTiming?.('sceneLoaded', null, at)
+    },
+    notifyCameraStarted(at = performance.now()) {
+      preloaderSession.markTiming?.('cameraStarted', null, at)
+    },
+    notifyFirstCameraFrame(at = performance.now()) {
+      preloaderSession.markTiming?.('firstCameraFrame', null, at)
     },
     suspendForOtherTarget() {
-      if (state === PAGE3_STATES.HIDDEN && !tracked) return
+      if (state === PAGE3_STATES.HIDDEN && !tracked && gpuReadyAssets.size === 0) return
       suspended = true
       tracked = false
       stable.setTracked(false)
       pauseForTracking()
+      stopStageMedia({ reset: false })
       root.querySelector('.page1-ar')?.classList.remove('is-page3-active')
       lostNotice.hidden = true
-      if (![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) setVisible(anchor, false)
+      if (![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) {
+        setPage3State(PAGE3_STATES.HIDDEN)
+        setVisible(anchor, false)
+      }
+      releasePage3ImageTextures()
+      pendingEnter = false
+      moduleEntered = false
+      page3Entered = false
       syncEntryUi()
     },
     getState: () => ({

@@ -80,8 +80,14 @@ export function renderArPage1(root) {
     : null
   const page2Debug = params.get('debug') === '1' && params.get('ar') === 'page2'
   const page3Debug = params.get('debug') === '1' && params.get('ar') === 'page3'
-  const page2Entry = params.get('ar') === 'page2'
-  const page3Entry = params.get('ar') === 'page3'
+  const requestedAr = params.get('ar')
+  const page1Entry = requestedAr === 'page1'
+  const page2Entry = requestedAr === 'page2'
+  const page3Entry = requestedAr === 'page3'
+  const collectionMode = !requestedAr
+  const page1Enabled = collectionMode || page1Entry
+  const page2Enabled = collectionMode || page2Entry
+  const page3Enabled = collectionMode || page3Entry
   const page2MindarTuning = page2Entry
     ? `; warmupTolerance: ${PAGE2_CONFIG.mindar.warmupTolerance}; missTolerance: ${PAGE2_CONFIG.mindar.missTolerance}; filterMinCF: ${PAGE2_CONFIG.mindar.filterMinCF}; filterBeta: ${PAGE2_CONFIG.mindar.filterBeta}`
     : ''
@@ -125,18 +131,21 @@ export function renderArPage1(root) {
     // 存储不可用不阻塞AR启动。
   }
 
+  const page1ImageSource = (path) =>
+    page1Entry ? `src="${path}"` : `data-page1-src="${path}"`
+
   root.innerHTML = `
     <main class="page1-preview page1-ar${page2Entry ? ' is-page2-route' : ''}${page3Entry ? ' is-page3-route' : ''}"
       data-app-state="${APP_AR_STATES.LANDING}" data-active-target="-1"
-      style="--color-mask-url: url('${config.assets.colorMask}')">
+      style="--color-mask-url: ${page1Entry ? `url('${config.assets.colorMask}')` : 'none'}">
       <div class="ar-runtime-assets" hidden>
-        <img id="craft-panel-asset" src="${config.assets.backgroundBoard}" alt="" draggable="false" />
-        <img id="page1-floor-asset" src="${config.assets.floorBase}" alt="" draggable="false" crossorigin="anonymous" />
-        <img id="page1-title-asset" src="${config.assets.titleImage}" alt="" draggable="false" crossorigin="anonymous" />
+        <img id="craft-panel-asset" ${page1ImageSource(config.assets.backgroundBoard)} alt="" draggable="false" />
+        <img id="page1-floor-asset" ${page1ImageSource(config.assets.floorBase)} alt="" draggable="false" crossorigin="anonymous" />
+        <img id="page1-title-asset" ${page1ImageSource(config.assets.titleImage)} alt="" draggable="false" crossorigin="anonymous" />
         <img id="page1-color-mask-asset" data-page1-src="${config.assets.colorMask}" alt="" draggable="false" />
         <img id="badge-bamboo" data-page1-src="${config.assets.badge}" alt="" draggable="false" />
         ${config.assets.craftLayers.map((layer, index) =>
-          `<img id="explode-${layer.id}" ${index === 0 ? `src="${layer.path}"` : `data-page1-src="${layer.path}"`} alt="" draggable="false" />`,
+          `<img id="explode-${layer.id}" ${index === 0 ? page1ImageSource(layer.path) : `data-page1-src="${layer.path}"`} alt="" draggable="false" />`,
         ).join('')}
         <canvas id="${config.canvas.id}" width="${config.canvas.width}" height="${config.canvas.height}"></canvas>
         <div class="page2-preload-assets">${page2Assets}</div>
@@ -637,6 +646,16 @@ export function renderArPage1(root) {
       page1CriticalReady: Boolean(page1Progress.criticalReady),
       page2CriticalReady: Boolean(page2Progress.criticalReady),
       page3CriticalReady: Boolean(page3Progress.criticalReady),
+      page2RequestCount: page2Progress.requestedCount || 0,
+      page3RequestCount: page3Progress.requestCount || 0,
+      page2GpuReadyCount: page2Progress.gpuReadyCount || 0,
+      page3GpuReadyCount: page3Progress.gpuReadyCount || 0,
+      page2CurrentLoadingPath: page2Progress.currentLoadingPath || '',
+      page3CurrentLoadingPath: page3Progress.currentLoadingPath || '',
+      page2MobileAssets: Boolean(page2Progress.mobileAssets),
+      page3MobileAssets: Boolean(page3Progress.mobileAssets),
+      page2Timing: page2Progress.timing || null,
+      page3Timing: page3Progress.timing || null,
       page1PendingEnter,
       page2PendingEnter: Boolean(page2State?.pendingEnter),
       page3PendingEnter: Boolean(page3State?.pendingEnter),
@@ -915,28 +934,36 @@ export function renderArPage1(root) {
     actions,
   })
 
-  const pageCleanup = initializePage1Controller({
-    root,
-    config,
-    debugLayers: false,
-    debugMode: ['state', 'explode'].includes(debugMode) ? debugMode : null,
-    shouldReset: params.get('reset') === '1',
-    arBridge,
-    startPaused: true,
-    canShowBambooHint,
-    onHintVisibilityChange: updateHintDebug,
-    onStateChange(nextState) {
-      if (!craftStarted || !panelReady || !(lifecycle?.isTracked() ?? false)) return
-      arState = nextState
-      updateHintDebug()
-    },
-    onStageEnter(nextState) {
-      if (nextState === 'BAMBOO_BUILD') page1Loader.preloadNextStep('page1', 'bamboo')
-      if (nextState === 'BAMBOO_COMPLETE') page1Loader.preloadNextStep('page1', 'paper')
-      if (nextState === 'PAPER_COMPLETE') page1Loader.preloadNextStep('page1', 'paint')
-      if (nextState === 'AWAKEN_REVIEW') page1Loader.preloadIdleAssets('page1')
-    },
-  })
+  let page1ControllerInitialized = false
+  let pageCleanup = () => {}
+  const ensurePage1Controller = () => {
+    if (page1ControllerInitialized) return false
+    page1ControllerInitialized = true
+    pageCleanup = initializePage1Controller({
+      root,
+      config,
+      debugLayers: false,
+      debugMode: ['state', 'explode'].includes(debugMode) ? debugMode : null,
+      shouldReset: params.get('reset') === '1',
+      arBridge,
+      startPaused: true,
+      canShowBambooHint,
+      onHintVisibilityChange: updateHintDebug,
+      onStateChange(nextState) {
+        if (!craftStarted || !panelReady || !(lifecycle?.isTracked() ?? false)) return
+        arState = nextState
+        updateHintDebug()
+      },
+      onStageEnter(nextState) {
+        if (nextState === 'BAMBOO_BUILD') page1Loader.preloadNextStep('page1', 'bamboo')
+        if (nextState === 'BAMBOO_COMPLETE') page1Loader.preloadNextStep('page1', 'paper')
+        if (nextState === 'PAPER_COMPLETE') page1Loader.preloadNextStep('page1', 'paint')
+        if (nextState === 'AWAKEN_REVIEW') page1Loader.preloadIdleAssets('page1')
+      },
+    })
+    return true
+  }
+  if (page1Entry) ensurePage1Controller()
 
   const applyMarkerAspect = (value) => {
     markerAspect = value || config.ar.markerAspectFallback
@@ -1101,7 +1128,7 @@ export function renderArPage1(root) {
       },
     })
 
-    if (page2Target && page2Anchor) {
+    if (page2Enabled && page2Target && page2Anchor) {
       try {
         page2Controller = createPage2Experience({
           root,
@@ -1136,7 +1163,7 @@ export function renderArPage1(root) {
       }
     }
 
-    if (page3Target && page3Anchor) {
+    if (page3Enabled && page3Target && page3Anchor) {
       try {
         page3Controller = createPage3Experience({
           root,
@@ -1172,11 +1199,12 @@ export function renderArPage1(root) {
       }
     }
 
-    lifecycle = createTargetLifecycle({
+    if (page1Enabled) lifecycle = createTargetLifecycle({
       target,
       lostDelayMs: config.ar.tracking.lostDelayMs,
       signal,
       onFound() {
+        ensurePage1Controller()
         const activationId = ++page1ActivationId
         page2Controller?.suspendForOtherTarget()
         page3Controller?.suspendForOtherTarget()
@@ -1269,15 +1297,21 @@ export function renderArPage1(root) {
       const system = scene.systems['mindar-image-system']
       if (!system?.start) throw new Error('MindAR系统未加载')
       setupArControllers()
+      const sceneLoadedAt = performance.now()
+      page2Controller?.notifySceneLoaded?.(sceneLoadedAt)
+      page3Controller?.notifySceneLoaded?.(sceneLoadedAt)
       await system.start()
       cameraStarted = true
       cameraPermissionGranted = true
       const cameraStartedAt = performance.now()
       page2Preloader?.markTiming?.('cameraStarted', null, cameraStartedAt)
       page2Controller?.notifyCameraStarted?.(cameraStartedAt)
+      page3Controller?.notifyCameraStarted?.(cameraStartedAt)
       await waitForCameraFrame(system)
-      page2Controller?.startAssetLoading()
-      page2Controller?.notifyCameraStarted?.(cameraStartedAt)
+      const firstCameraFrameAt = performance.now()
+      page2Controller?.notifyFirstCameraFrame?.(firstCameraFrameAt)
+      page3Controller?.notifyFirstCameraFrame?.(firstCameraFrameAt)
+      if (page2Entry) page2Controller?.startAssetLoading()
       if (page3Entry) page3Controller?.startAssetLoading()
     })().catch((error) => {
       cameraStartRequested = false
@@ -1324,11 +1358,14 @@ export function renderArPage1(root) {
   )
   applyMarkerAspect(config.a5Layout.aspectRatio)
   updateStorageDebug()
-  if (page2Entry || page2Debug || page3Entry || page3Debug) {
+  if (page2Entry || page3Entry) {
     const prepareArControllers = () => {
       setupArControllers()
-      if (page2Entry || page2Debug) page2Controller?.startAssetLoading()
-      if (page3Entry || page3Debug) page3Controller?.startAssetLoading()
+      const sceneLoadedAt = performance.now()
+      page2Controller?.notifySceneLoaded?.(sceneLoadedAt)
+      page3Controller?.notifySceneLoaded?.(sceneLoadedAt)
+      if (page2Entry) page2Controller?.startAssetLoading()
+      if (page3Entry) page3Controller?.startAssetLoading()
     }
     if (scene.hasLoaded) prepareArControllers()
     else scene.addEventListener('loaded', prepareArControllers, { once: true, signal })

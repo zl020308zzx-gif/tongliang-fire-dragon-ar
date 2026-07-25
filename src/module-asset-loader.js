@@ -40,6 +40,7 @@ export async function loadImageElement(image, path, options = {}) {
     loadTimeoutMs = ASSET_TIMEOUTS.imageLoadMs,
     decodeTimeoutMs = ASSET_TIMEOUTS.imageDecodeMs,
     allowDecodeFallback = false,
+    onLoaded = null,
   } = options
   if (!(image instanceof HTMLImageElement)) throw new Error(`缺少图片元素：${path}`)
   const targetUrl = new URL(path, document.baseURI).href
@@ -76,6 +77,8 @@ export async function loadImageElement(image, path, options = {}) {
       cleanup,
     )
   }
+
+  onLoaded?.(image)
 
   if (typeof image.decode === 'function') {
     try {
