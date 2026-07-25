@@ -5,9 +5,15 @@ import { createPage2Model } from './page2-model.js'
 import { createPage2Overview } from './page2-overview.js'
 import { createPage2Particles } from './page2-particles.js'
 import { createPage2Floor } from './page2-floor.js'
-import { PAGE2_ASSET_ENTRIES, startPage2CriticalPreload } from './page2-preloader.js'
+import {
+  PAGE2_ASSET_ENTRIES,
+  PAGE2_CRITICAL_IMAGE_KEYS,
+  PAGE2_LATER_MAIN_KEYS,
+  startPage2CriticalPreload,
+} from './page2-preloader.js'
 import { PAGE2_CONFIG, PAGE2_STATES } from './page2-config.js'
-import { ASSET_TIMEOUTS, isTimeoutError, withTimeout } from '../module-asset-loader.js'
+import { isTimeoutError, withTimeout } from '../module-asset-loader.js'
+import { getModuleEntryVisibility } from '../shared-module-ui.js'
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value))
 const invalidNumericLabels = new Set()
@@ -298,6 +304,7 @@ export function createPage2Experience({
   onActivate,
   onTrackingFound,
   onTrackingLost,
+  onEntryStateChange,
 }) {
   const THREE = window.AFRAME.THREE
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
@@ -347,6 +354,7 @@ export function createPage2Experience({
   let depthDirection = -1
   let destroyed = false
   let assetLoadingPromise = null
+  let laterMainLoadingPromise = null
   let bindingFrame = 0
   let replayGuideTimer = 0
   let modelIdleHandle = 0
@@ -374,6 +382,11 @@ export function createPage2Experience({
     entranceRequested: false,
     entranceStarted: false,
     entranceCompleted: false,
+    pendingEnter: false,
+    moduleEntered: false,
+    page2Entered: false,
+    laterMainReady: false,
+    laterFailedAssets: new Map(),
     visibleLayerCount: 0,
     cameraStarted: false,
     liteMode: false,
@@ -413,6 +426,29 @@ export function createPage2Experience({
   }
   const setHtmlVisible = (element, visible) => {
     if (element) element.hidden = !visible
+  }
+  const syncEntryUi = () => {
+    const visibility = getModuleEntryVisibility({
+      targetFound: tracked,
+      pendingEnter: page2Runtime.pendingEnter,
+      moduleEntered: page2Runtime.moduleEntered,
+    })
+    preloadSession.setEntryState?.({
+      targetFound: tracked,
+      pendingEnter: page2Runtime.pendingEnter,
+      moduleEntered: page2Runtime.moduleEntered,
+    })
+    if (!visibility.moduleControlsVisible) {
+      setHtmlVisible(guide, false)
+      setHtmlVisible(overviewHint, false)
+      enableModelUi(false)
+      setHtmlVisible(infoCard, false)
+      setHtmlVisible(completeCard, false)
+    }
+    const sharedBottomHint = root.querySelector('.module-bottom-hint')
+    if (sharedBottomHint) sharedBottomHint.hidden = !visibility.moduleControlsVisible
+    onEntryStateChange?.(visibility)
+    return visibility
   }
   const setDarkness = (opacity) => {
     darkOpacity = clamp(opacity)
@@ -533,6 +569,37 @@ export function createPage2Experience({
         !background.textureUuids.includes(floor.textureUuid),
     }
   }
+  const isLayerTextureRenderable = (key) => {
+    const imageElement = root.querySelector(`#${assetEntryByKey.get(key)}`)
+    if (!(imageElement instanceof HTMLImageElement)
+      || !imageElement.complete
+      || imageElement.naturalWidth <= 0
+      || imageElement.naturalHeight <= 0) return false
+    const expectedSource = new URL(config.assets[key], document.baseURI).href
+    const entities = [...root.querySelectorAll(`[data-page2-asset-key="${key}"]`)]
+    return entities.length > 0 && entities.every((entity) => {
+      if (!hasFiniteObjectTransform(entity.object3D) || !entity.object3D.parent) return false
+      let mapped = false
+      entity.object3D.traverse((object) => {
+        const materials = Array.isArray(object.material) ? object.material : [object.material]
+        if (materials.filter(Boolean).some((material) => {
+          const mapImage = material.map?.image
+          return material.map && (
+            mapImage === imageElement
+            || mapImage?.currentSrc === expectedSource
+            || mapImage?.src === expectedSource
+          )
+        })) mapped = true
+      })
+      return mapped
+    })
+  }
+  const isPage2FoundationRenderable = () => {
+    const foundation = getFoundationReadiness()
+    return foundation.renderable
+      && isLayerTextureRenderable('title')
+      && isLayerTextureRenderable('mainBase')
+  }
   let overview
   const model = createPage2Model({
     root,
@@ -598,7 +665,6 @@ export function createPage2Experience({
       markTiming(timingName, { layerKey, sequenceElapsedMs })
       if (moduleName === 'initial') {
         setHtmlVisible(guide, false)
-        preloadSession.hideLoading?.()
       }
       updateReadinessDebug()
     },
@@ -689,7 +755,7 @@ export function createPage2Experience({
 
   const waitTwoAnimationFrames = () => withTimeout(
     new Promise((resolve) => afterTwoAnimationFrames(resolve)),
-    ASSET_TIMEOUTS.renderFramesMs,
+    1500,
     '[page2] 等待纹理渲染帧超时',
   )
 
@@ -721,7 +787,7 @@ export function createPage2Experience({
     enableModelUi(false)
     setHtmlVisible(completeCard, false)
     setHtmlVisible(overviewHint, false)
-    setHtmlVisible(guide, true)
+    setHtmlVisible(guide, false)
     guideTitle.textContent = page2Runtime.scanSessionId > 1 ? '再次识别｜龙脉探源' : '识别成功｜龙脉探源'
     guideText.textContent = preloadSession.getSnapshot().criticalReady
       ? '请抬起手机，与识别图保持垂直'
@@ -799,6 +865,7 @@ export function createPage2Experience({
     const isValid = backgroundVisible
       && overviewVisible
       && tracked
+      && page2Runtime.laterMainReady
       && state === PAGE2_STATES.OVERVIEW_ENTERING
       && visibleIds.has('main-dragon')
       && culturalModules >= 3
@@ -876,7 +943,7 @@ export function createPage2Experience({
       return
     }
     const foundation = getFoundationReadiness()
-    if (!foundation.renderable) {
+    if (!foundation.renderable || !isPage2FoundationRenderable()) {
       guideText.textContent = '正在建立AR场景……'
       return
     }
@@ -895,17 +962,32 @@ export function createPage2Experience({
         return
       }
       const readyAfterFrames = getFoundationReadiness()
-      if (!preloadSession.getSnapshot().criticalReady || !readyAfterFrames.renderable) {
+      if (!preloadSession.getSnapshot().criticalReady
+        || !readyAfterFrames.renderable
+        || !isPage2FoundationRenderable()) {
         guideText.textContent = '正在建立AR场景……'
         updateReadinessDebug()
         return
       }
       page2Runtime.entranceStarted = true
       floorBase.start(currentRunId)
-      preloadSession.hideLoading?.()
       guideText.textContent = '请抬起手机，与识别图保持垂直'
       detectDepthDirection()
       maybeStartBackgroundTimeline()
+      waitTwoAnimationFrames()
+        .catch((error) => {
+          console.warn('[page2] Render-frame confirmation timed out; using verified textures', error)
+        })
+        .finally(() => {
+          if (destroyed || !tracked || suspended || currentRunId !== page2Runtime.entranceRunId) return
+          page2Runtime.pendingEnter = false
+          page2Runtime.moduleEntered = true
+          page2Runtime.page2Entered = true
+          preloadSession.hideLoading?.()
+          syncEntryUi()
+          setHtmlVisible(guide, true)
+          startLaterMainLoading()
+        })
       debugLog('page2EntranceStarted', { runId: currentRunId, backgroundReady: page2Runtime.backgroundReady })
       updateReadinessDebug()
     }, currentRunId)
@@ -968,21 +1050,23 @@ export function createPage2Experience({
     })
     if (key === 'floor') floorBase.bindImage(imageElement)
     const textures = new Set()
-    for (let attempt = 0; attempt < 6 && textures.size === 0; attempt += 1) {
-      await waitTwoAnimationFrames()
-      entitiesForAsset.forEach((entity) => entity.object3D.traverse((object) => {
-        const materials = Array.isArray(object.material) ? object.material : [object.material]
-        materials.filter(Boolean).forEach((material) => {
-          const mapImage = material.map?.image
-          if (
-            material.map &&
-            (mapImage === imageElement ||
-              mapImage?.currentSrc === expectedSource ||
-              mapImage?.src === expectedSource)
-          ) textures.add(material.map)
-        })
-      }))
-    }
+    await withTimeout((async () => {
+      while (textures.size === 0) {
+        await waitTwoAnimationFrames()
+        entitiesForAsset.forEach((entity) => entity.object3D.traverse((object) => {
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          materials.filter(Boolean).forEach((material) => {
+            const mapImage = material.map?.image
+            if (
+              material.map &&
+              (mapImage === imageElement ||
+                mapImage?.currentSrc === expectedSource ||
+                mapImage?.src === expectedSource)
+            ) textures.add(material.map)
+          })
+        }))
+      }
+    })(), 5000, `[page2] Texture binding timed out: ${config.assets[key]}`, config.assets[key])
     if (!imageElement.complete || imageElement.naturalWidth <= 0 || imageElement.naturalHeight <= 0) {
       throw new Error(`[page2] Image became incomplete before texture binding: ${config.assets[key]}`)
     }
@@ -1048,14 +1132,17 @@ export function createPage2Experience({
     })).catch((error) => {
       const failureStatus = isTimeoutError(error) ? 'timedOut' : 'failed'
       assetStatus.set(key, failureStatus)
-      page2Runtime.failedAssets.set(key, { url, error: error?.message || String(error) })
+      const failure = { url, error: error?.message || String(error) }
+      const isLaterMainAsset = PAGE2_LATER_MAIN_KEYS.includes(key)
+      if (isLaterMainAsset) page2Runtime.laterFailedAssets.set(key, failure)
+      else page2Runtime.failedAssets.set(key, failure)
       const preloadStatus = preloadSession.getSnapshot().status.get(key)
-      if (!['failed', 'timedOut'].includes(preloadStatus)) {
+      if (!isLaterMainAsset && !['failed', 'timedOut'].includes(preloadStatus)) {
         preloadSession.markCriticalTextureFailure?.(key, error)
       }
       bindingPromises.delete(key)
       console.error('[page2] Asset failed', { layerId: key, fileName: url?.split('/').pop(), url, error })
-      if (tracked) {
+      if (tracked && !isLaterMainAsset) {
         errorNotice.textContent = '部分可视化资源加载失败，请重新扫描'
         setHtmlVisible(errorNotice, true)
       }
@@ -1067,7 +1154,7 @@ export function createPage2Experience({
   }
 
   const moduleAssetKeys = Object.freeze({
-    initial: ['title', 'mainBase', 'mainRing', 'mainScene', 'mainSparks', 'mainPerformers', 'mainDancers', 'mainDragon', 'mainPearl'],
+    initial: ['title', 'mainBase'],
     intro: ['introDragon', 'introText'],
     map: ['mapMain', 'mapText', 'mapTongliang'],
     types: ['typesTitle', 'typesBack', 'typesMid', 'typesFront'],
@@ -1082,11 +1169,12 @@ export function createPage2Experience({
   const startAssetLoading = () => {
     if (assetLoadingPromise || destroyed) return assetLoadingPromise
     assetLoadingPromise = (async () => {
-      const results = await Promise.allSettled([
-        loadAsset('floor'),
-        loadAsset('background'),
-        ...moduleAssetKeys.initial.map((key) => loadAsset(key)),
-      ])
+      await preloadSession.criticalPromise
+      const results = []
+      for (const key of PAGE2_CRITICAL_IMAGE_KEYS) {
+        const [result] = await Promise.allSettled([loadAsset(key)])
+        results.push(result)
+      }
       updateAssetReadiness()
       return results
     })()
@@ -1094,10 +1182,70 @@ export function createPage2Experience({
     return assetLoadingPromise
   }
 
+  const waitForAssetTexture = (key) => withTimeout(new Promise((resolve) => {
+    const imageElement = root.querySelector(`#${assetEntryByKey.get(key)}`)
+    const expectedSource = new URL(config.assets[key], document.baseURI).href
+    const inspect = () => {
+      const entities = [...root.querySelectorAll(`[data-page2-asset-key="${key}"]`)]
+      const textureReady = entities.length > 0 && entities.every((entity) => {
+        let mapped = false
+        entity.object3D.traverse((object) => {
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          if (materials.filter(Boolean).some((material) => {
+            const mapImage = material.map?.image
+            return mapImage === imageElement
+              || mapImage?.currentSrc === expectedSource
+              || mapImage?.src === expectedSource
+          })) mapped = true
+        })
+        return mapped
+      })
+      if (textureReady) resolve()
+      else requestAnimationFrame(inspect)
+    }
+    inspect()
+  }), 5000, `[page2] Later texture validation timed out: ${config.assets[key]}`, config.assets[key])
+
+  const startLaterMainLoading = () => {
+    if (laterMainLoadingPromise || destroyed) return laterMainLoadingPromise
+    laterMainLoadingPromise = (async () => {
+      for (const key of PAGE2_LATER_MAIN_KEYS) {
+        let loaded = false
+        for (let attempt = 0; attempt < 2 && !loaded; attempt += 1) {
+          if (attempt > 0) {
+            bindingPromises.delete(key)
+            assetStatus.set(key, 'deferred')
+            preloadSession.resetImageForRetry?.(key)
+          }
+          try {
+            await loadAsset(key)
+            await waitForAssetTexture(key)
+            page2Runtime.laterFailedAssets.delete(key)
+            loaded = true
+          } catch (error) {
+            console.error('[page2] Later main asset failed', {
+              key,
+              url: config.assets[key],
+              attempt: attempt + 1,
+              error,
+            })
+          }
+        }
+      }
+      page2Runtime.laterMainReady = PAGE2_LATER_MAIN_KEYS
+        .every((key) => assetStatus.get(key) === 'loaded')
+      if (entranceAnimationFinished) finalizeOverviewIfVisible()
+      return {
+        ready: page2Runtime.laterMainReady,
+        failedAssets: new Map(page2Runtime.laterFailedAssets),
+      }
+    })()
+    return laterMainLoadingPromise
+  }
+
   const retryCriticalAssets = async () => {
     const snapshot = preloadSession.getSnapshot()
-    const retryKeys = PAGE2_ASSET_ENTRIES
-      .map(([, key]) => key)
+    const retryKeys = PAGE2_CRITICAL_IMAGE_KEYS
       .filter((key) => ['failed', 'timedOut'].includes(snapshot.status.get(key)) || page2Runtime.failedAssets.has(key))
     retryKeys.forEach((key) => {
       bindingPromises.delete(key)
@@ -1141,9 +1289,16 @@ export function createPage2Experience({
     page2Runtime.targetVisible = true
     page2Runtime.lostStartedAt = 0
     page2Runtime.entranceRequested = true
+    const resumingEnteredModule = !replay
+      && resumeState !== PAGE2_STATES.HIDDEN
+      && page2Runtime.moduleEntered
+    page2Runtime.pendingEnter = !resumingEnteredModule
+    page2Runtime.moduleEntered = resumingEnteredModule
+    page2Runtime.page2Entered = resumingEnteredModule
     root.querySelector('.page1-ar')?.classList.add('is-page2-active')
     onActivate?.()
     onTrackingFound?.()
+    syncEntryUi()
     stable.setTracked(true)
     startAssetLoading()
     if (!preloadSession.getSnapshot().criticalReady) {
@@ -1158,6 +1313,7 @@ export function createPage2Experience({
       setHtmlVisible(completeCard, state === PAGE2_STATES.COMPLETE)
       if (state === PAGE2_STATES.GUIDE) maybeStartPage2Entrance()
       if (state === PAGE2_STATES.OVERVIEW_ENTERING) maybeStartBackgroundTimeline()
+      syncEntryUi()
       updateReadinessDebug()
       return
     }
@@ -1165,6 +1321,10 @@ export function createPage2Experience({
     page2Runtime.replayArmed = false
     setState(PAGE2_STATES.GUIDE)
     resetPage2EntranceVisualState()
+    page2Runtime.pendingEnter = true
+    page2Runtime.moduleEntered = false
+    page2Runtime.page2Entered = false
+    syncEntryUi()
   }
 
   const loseTracking = () => {
@@ -1177,6 +1337,7 @@ export function createPage2Experience({
     tracked = false
     onTrackingLost?.()
     page2Runtime.targetVisible = false
+    syncEntryUi()
     page2Runtime.lostStartedAt = performance.now()
     resumeState = state
     if (state === PAGE2_STATES.GUIDE) {
@@ -1571,6 +1732,7 @@ export function createPage2Experience({
       enableModelUi(false)
       closeCard()
       setHtmlVisible(completeCard, false)
+      syncEntryUi()
     },
     resumeAfterSuspension() {
       resumeState = stateBeforeSuspension
@@ -1584,7 +1746,7 @@ export function createPage2Experience({
       fps,
       ...page2Runtime,
       page2ModelLoaded,
-      pendingEnter: tracked && page2Runtime.entranceRequested && !page2Runtime.entranceStarted,
+      pendingEnter: page2Runtime.pendingEnter,
       preload: {
         ...preloadSession.getSnapshot(),
         status: Object.fromEntries(preloadSession.getSnapshot().status),

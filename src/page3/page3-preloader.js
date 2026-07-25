@@ -24,7 +24,11 @@ const mediaEntries = Object.freeze([
 ])
 
 const loadImageElement = (image, path) =>
-  loadSharedImageElement(image, path).catch((error) => {
+  loadSharedImageElement(image, path, {
+    loadTimeoutMs: 15000,
+    decodeTimeoutMs: 6000,
+    allowDecodeFallback: true,
+  }).catch((error) => {
     throw new Error(`[page3] ${error.message}`)
   })
 

@@ -35,7 +35,12 @@ export function withTimeout(promise, timeoutMs, message, path = '', onTimeout = 
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve))
 
-export async function loadImageElement(image, path) {
+export async function loadImageElement(image, path, options = {}) {
+  const {
+    loadTimeoutMs = ASSET_TIMEOUTS.imageLoadMs,
+    decodeTimeoutMs = ASSET_TIMEOUTS.imageDecodeMs,
+    allowDecodeFallback = false,
+  } = options
   if (!(image instanceof HTMLImageElement)) throw new Error(`缺少图片元素：${path}`)
   const targetUrl = new URL(path, document.baseURI).href
   const sourceMatches = image.currentSrc === targetUrl || image.src === targetUrl
@@ -65,7 +70,7 @@ export async function loadImageElement(image, path) {
     })
     await withTimeout(
       loadPromise,
-      ASSET_TIMEOUTS.imageLoadMs,
+      loadTimeoutMs,
       `图片加载超时：${path}`,
       path,
       cleanup,
@@ -76,12 +81,21 @@ export async function loadImageElement(image, path) {
     try {
       await withTimeout(
         image.decode(),
-        ASSET_TIMEOUTS.imageDecodeMs,
+        decodeTimeoutMs,
         `图片解码超时：${path}`,
         path,
       )
     } catch (error) {
-      if (isTimeoutError(error) || image.naturalWidth <= 0 || image.naturalHeight <= 0) throw error
+      const hasDecodedDimensions = image.complete
+        && image.naturalWidth > 0
+        && image.naturalHeight > 0
+      if (!allowDecodeFallback || !hasDecodedDimensions) throw error
+      console.warn('[asset-loader] image.decode() failed after load; continuing with decoded dimensions', {
+        path,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        error,
+      })
     }
   }
   if (image.naturalWidth <= 0 || image.naturalHeight <= 0) throw new Error(`图片尺寸无效：${path}`)

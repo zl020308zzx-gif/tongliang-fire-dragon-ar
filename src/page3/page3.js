@@ -9,6 +9,7 @@ import {
 } from './page3-config.js'
 import { createPage3Effects } from './page3-effects.js'
 import { createPage3Preloader } from './page3-preloader.js'
+import { getModuleEntryVisibility } from '../shared-module-ui.js'
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value))
 const lerp = (from, to, progress) => from + (to - from) * progress
@@ -345,6 +346,7 @@ export function createPage3Experience({
   onActivate,
   onTrackingFound,
   onTrackingLost,
+  onEntryStateChange,
 }) {
   registerPage3Runtime()
   scene.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, config.performance.maxPixelRatio))
@@ -445,6 +447,32 @@ export function createPage3Experience({
   const chromaMaterials = new Set()
   let criticalRenderableFrames = 0
   let criticalGateOpened = false
+  let pendingEnter = false
+  let moduleEntered = false
+  let page3Entered = false
+  let tryEnterPage3 = () => false
+
+  const syncEntryUi = () => {
+    const visibility = getModuleEntryVisibility({
+      targetFound: tracked,
+      pendingEnter,
+      moduleEntered,
+    })
+    ui.hidden = !tracked
+    loading.hidden = !visibility.loadingVisible
+    if (!visibility.moduleControlsVisible) {
+      stepCard.hidden = true
+      progress.hidden = true
+      prompt.hidden = true
+      endOptions.hidden = true
+      drumEnabled = false
+      setVisible(drumHit, false)
+    }
+    const sharedBottomHint = root.querySelector('.module-bottom-hint')
+    if (sharedBottomHint) sharedBottomHint.hidden = !visibility.moduleControlsVisible
+    onEntryStateChange?.(visibility)
+    return visibility
+  }
 
   const stable = createStableAnchorController({
     target,
@@ -661,6 +689,7 @@ export function createPage3Experience({
     const failedPaths = [...snapshot.errors.values()].map((failure) => failure.path)
     if (failedPaths.length) showError(`部分资源加载失败：${failedPaths.join('、')}`)
     renderDebug()
+    queueMicrotask(() => tryEnterPage3())
   }
   const setTransform = (entity, { position, rotation, scale } = {}) => {
     if (!entity?.object3D) return
@@ -1094,9 +1123,9 @@ export function createPage3Experience({
       setOpacity(cloudFront, config.clouds.front.opacityMin)
       setOpacity(drumPlane, 1)
     }
-    placementGuideActive = stateElapsed < holdMs
-    placementGuide.hidden = !placementGuideActive
-    loading.hidden = placementGuideActive
+    placementGuideActive = false
+    placementGuide.hidden = true
+    syncEntryUi()
     return rawOpenProgress
   }
 
@@ -1303,6 +1332,14 @@ export function createPage3Experience({
   const setPage3State = (nextState) => {
     if (destroyed || state === nextState) return false
     state = nextState
+    if (state === PAGE3_STATES.READY) {
+      pendingEnter = false
+      moduleEntered = true
+      page3Entered = true
+    } else if (state === PAGE3_STATES.HIDDEN) {
+      moduleEntered = false
+      page3Entered = false
+    }
     stateElapsed = 0
     stateFlags = new Set()
     drumEnabled = false
@@ -1407,9 +1444,38 @@ export function createPage3Experience({
       completeScreen.hidden = false
     }
     updateDrumEnabled()
+    syncEntryUi()
     renderDebug()
     if (debug) console.info('[page3] state', state)
     return true
+  }
+
+  tryEnterPage3 = (advanceRenderFrame = false) => {
+    const withinTrackingGrace = tracked
+      || (lostStartedAt > 0
+        && performance.now() - lostStartedAt <= config.tracking.noticeDelayMs)
+    if (!withinTrackingGrace
+      || !pendingEnter
+      || moduleEntered
+      || state !== PAGE3_STATES.LOADING
+      || !criticalReady
+      || criticalGateOpened && foundationReady) return false
+    const criticalScene = getCriticalSceneReadiness()
+    if (!criticalScene.criticalTexturesBound
+      || !criticalScene.criticalEntitiesMounted
+      || !criticalScene.criticalEntitiesRenderable) {
+      criticalRenderableFrames = 0
+      return false
+    }
+    if (!advanceRenderFrame) return false
+    if (!criticalGateOpened) {
+      criticalRenderableFrames += 1
+      if (criticalRenderableFrames < config.foundation.readyRenderFrames) return false
+      criticalGateOpened = true
+      stateElapsed = 0
+    }
+    if (!updateFoundationGate()) return false
+    return setPage3State(PAGE3_STATES.READY)
   }
 
   const playDrumFeedback = () => {
@@ -1579,6 +1645,9 @@ export function createPage3Experience({
     suspended = false
     tracked = true
     lostStartedAt = 0
+    pendingEnter = state === PAGE3_STATES.HIDDEN || state === PAGE3_STATES.LOADING
+    moduleEntered = !pendingEnter
+    page3Entered = moduleEntered
     root.querySelector('.page1-ar')?.classList.remove('is-page2-active')
     root.querySelector('.page1-ar')?.classList.add('is-page3-active')
     onActivate?.()
@@ -1586,22 +1655,24 @@ export function createPage3Experience({
     stable.setTracked(true)
     lostNotice.hidden = true
     ui.hidden = false
-    preloaderSession.loadCritical().catch((error) => {
-      showError(error.message)
-    })
+    syncEntryUi()
+    preloaderSession.loadCritical()
+      .then(() => tryEnterPage3())
+      .catch((error) => {
+        showError(error.message)
+      })
     if (state === PAGE3_STATES.HIDDEN) {
       stableElapsed = 0
-      if (!placementGuideShown) {
-        placementGuideShown = true
-        placementGuideActive = true
-        placementGuide.hidden = false
-      }
-      loading.hidden = placementGuideActive
+      placementGuideShown = true
+      placementGuideActive = false
+      placementGuide.hidden = true
+      loading.hidden = false
       loadingText.textContent = '正在唤醒火龙舞台……'
     } else {
       setVisible(anchor, true)
       resumeAfterTracking()
     }
+    syncEntryUi()
     renderDebug()
   }
 
@@ -1616,6 +1687,7 @@ export function createPage3Experience({
     onTrackingLost?.()
     stable.setTracked(false)
     pauseForTracking()
+    syncEntryUi()
     renderDebug()
   }
 
@@ -1787,7 +1859,10 @@ export function createPage3Experience({
     if (state === PAGE3_STATES.HIDDEN) {
       if (stable.hasValidFullTransform()) stableElapsed += delta
       else stableElapsed = 0
-      if (stableElapsed >= config.durations.trackingStableMs) setPage3State(PAGE3_STATES.LOADING)
+      if (stableElapsed >= config.durations.trackingStableMs) {
+        setPage3State(PAGE3_STATES.LOADING)
+        tryEnterPage3(true)
+      }
       return
     }
     if ([PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) return
@@ -1806,25 +1881,8 @@ export function createPage3Experience({
         loadingText.textContent = '正在加载火舞舞台资源……'
         return
       }
-      const criticalScene = getCriticalSceneReadiness()
-      if (
-        !criticalScene.criticalTexturesBound ||
-        !criticalScene.criticalEntitiesMounted ||
-        !criticalScene.criticalEntitiesRenderable
-      ) {
-        criticalRenderableFrames = 0
-        loadingText.textContent = '正在建立AR场景……'
-        return
-      }
-      if (!criticalGateOpened) {
-        criticalRenderableFrames += 1
-        loadingText.textContent = '正在建立AR场景……'
-        if (criticalRenderableFrames < config.foundation.readyRenderFrames) return
-        criticalGateOpened = true
-        stateElapsed = 0
-      }
-      const foundationReadyNow = updateFoundationGate()
-      if (foundationReadyNow) setPage3State(PAGE3_STATES.READY)
+      loadingText.textContent = '正在建立AR场景……'
+      tryEnterPage3(true)
       return
     }
     if (state === PAGE3_STATES.READY) {
@@ -1897,15 +1955,17 @@ export function createPage3Experience({
     const simulate = () => {
       tracked = true
       suspended = false
-      if (!placementGuideShown) {
-        placementGuideShown = true
-        placementGuideActive = true
-        placementGuide.hidden = false
-      }
+      pendingEnter = true
+      moduleEntered = false
+      page3Entered = false
+      placementGuideShown = true
+      placementGuideActive = false
+      placementGuide.hidden = true
       root.querySelector('.page1-ar')?.classList.remove('is-page2-active')
       root.querySelector('.page1-ar')?.classList.add('is-page3-active')
       onActivate?.()
       ui.hidden = false
+      syncEntryUi()
       preloaderSession.loadCritical().then(() => {
         placeDebugAnchor()
         setPage3State(PAGE3_STATES.LOADING)
@@ -1966,6 +2026,7 @@ export function createPage3Experience({
       root.querySelector('.page1-ar')?.classList.remove('is-page3-active')
       lostNotice.hidden = true
       if (![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) setVisible(anchor, false)
+      syncEntryUi()
     },
     getState: () => ({
       state,
@@ -1975,7 +2036,9 @@ export function createPage3Experience({
       drumHitCount,
       criticalReady,
       deferredSettled,
-      pendingEnter: tracked && state === PAGE3_STATES.HIDDEN,
+      pendingEnter,
+      moduleEntered,
+      page3Entered,
       preload: preloaderSession.getSnapshot(),
       performanceVideoSource: config.platform.performanceVideoSource,
       performanceMaterialType: config.platform.performanceMaterialType,

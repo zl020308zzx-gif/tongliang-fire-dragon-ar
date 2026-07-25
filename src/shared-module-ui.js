@@ -23,6 +23,15 @@ export const sharedModuleUiMarkup = () => `
   </section>
 `
 
+export const getModuleEntryVisibility = ({
+  targetFound = false,
+  pendingEnter = false,
+  moduleEntered = false,
+} = {}) => ({
+  loadingVisible: Boolean(targetFound && pendingEnter && !moduleEntered),
+  moduleControlsVisible: Boolean(moduleEntered),
+})
+
 export function createSharedModuleUi({ root, signal }) {
   const header = root.querySelector('.module-header')
   const number = root.querySelector('[data-module-number]')
@@ -84,6 +93,9 @@ export function createSharedModuleUi({ root, signal }) {
       loading.hidden = true
       retry.hidden = true
       retryAction = null
+    },
+    setModuleControlsVisible(visible) {
+      bottomHint.hidden = !visible
     },
     getState() {
       return {

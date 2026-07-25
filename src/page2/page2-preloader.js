@@ -1,5 +1,4 @@
 import {
-  ASSET_TIMEOUTS,
   isTimeoutError,
   loadImageElement,
   withTimeout,
@@ -36,6 +35,9 @@ export const PAGE2_CRITICAL_IMAGE_KEYS = Object.freeze([
   'background',
   'title',
   'mainBase',
+])
+
+export const PAGE2_LATER_MAIN_KEYS = Object.freeze([
   'mainRing',
   'mainScene',
   'mainSparks',
@@ -45,14 +47,12 @@ export const PAGE2_CRITICAL_IMAGE_KEYS = Object.freeze([
   'mainPearl',
 ])
 
-const TARGETS_TASK = '__targets__'
 const sessions = new WeakMap()
 const nextFrame = () => withTimeout(
   new Promise((resolve) => requestAnimationFrame(resolve)),
-  ASSET_TIMEOUTS.renderFramesMs,
+  1500,
   '[page2] 等待资源调度渲染帧超时',
 )
-const isMobile = () => matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
 
 const addImagePreload = (url) => {
   const absoluteUrl = new URL(url, document.baseURI).href
@@ -69,7 +69,11 @@ const addImagePreload = (url) => {
 }
 
 const loadAndDecodeImage = async (img, url, onLoaded) => {
-  const ready = await loadImageElement(img, url)
+  const ready = await loadImageElement(img, url, {
+    loadTimeoutMs: 15000,
+    decodeTimeoutMs: 6000,
+    allowDecodeFallback: true,
+  })
   onLoaded()
   return ready
 }
@@ -101,18 +105,23 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   const timingDetails = Object.create(null)
   const timers = new Set()
   const failedKeys = new Set()
-  const maxConcurrency = isMobile() ? 3 : 4
+  const maxConcurrency = 2
   let requestedCount = 0
   let loadedCount = 0
   let decodedCount = 0
   let failedCount = 0
-  let targetReady = false
-  let targetFailed = false
-  let targetTimedOut = false
+  const targetReady = true
+  const targetFailed = false
+  const targetTimedOut = false
   let maxTextureUploadMs = 0
   let uiDismissed = false
   let phaseMessage = ''
   let destroyed = false
+  const entryState = {
+    targetFound: false,
+    pendingEnter: false,
+    moduleEntered: false,
+  }
 
   const markTiming = (name, detail = null, at = performance.now()) => {
     if (Number.isFinite(timingEvents[name])) return false
@@ -125,10 +134,8 @@ export function startPage2CriticalPreload({ root, config, debug = false }) {
   markTiming('pageOpened', null, pageOpenedAt)
   markTiming('criticalPreloadStarted')
 
-  const criticalAssetDiagnostics = [
-    ...PAGE2_CRITICAL_IMAGE_KEYS.map((name) => ({ name, url: config.assets[name] })),
-    { name: TARGETS_TASK, url: config.targets },
-  ]
+  const criticalAssetDiagnostics = PAGE2_CRITICAL_IMAGE_KEYS
+    .map((name) => ({ name, url: config.assets[name] }))
   console.info(`PAGE2 ASSET START:
 ${criticalAssetDiagnostics
     .map(({ name, url }) => `- asset name: ${name}\n  url: ${url}`)
@@ -163,14 +170,13 @@ ${criticalAssetDiagnostics
       .filter(([, key]) => ['failed', 'timedOut'].includes(status.get(key)))
       .length
     const criticalImageTotal = PAGE2_CRITICAL_IMAGE_KEYS.length
-    const criticalTotal = criticalImageTotal + 1
-    const criticalCompleted = criticalTextures.size + (targetReady ? 1 : 0)
+    const criticalTotal = criticalImageTotal
+    const criticalCompleted = criticalTextures.size
     const criticalProgress = Math.min(100, (criticalCompleted / criticalTotal) * 100)
-    const criticalReady = targetReady
-      && decodedCriticalImages.size === criticalImageTotal
+    const criticalReady = decodedCriticalImages.size === criticalImageTotal
       && criticalTextures.size === criticalImageTotal
-    const criticalFailed = targetFailed
-      || PAGE2_CRITICAL_IMAGE_KEYS.some((key) => ['failed', 'timedOut'].includes(status.get(key)))
+    const criticalFailed = PAGE2_CRITICAL_IMAGE_KEYS
+      .some((key) => ['failed', 'timedOut'].includes(status.get(key)))
     const criticalPendingPaths = PAGE2_CRITICAL_IMAGE_KEYS
       .filter((key) => !['ready', 'failed', 'timedOut'].includes(status.get(key)))
       .map((key) => config.assets[key])
@@ -180,9 +186,6 @@ ${criticalAssetDiagnostics
     const criticalTimedOutPaths = PAGE2_CRITICAL_IMAGE_KEYS
       .filter((key) => status.get(key) === 'timedOut')
       .map((key) => config.assets[key])
-    if (!targetReady && !targetFailed) criticalPendingPaths.push(config.targets)
-    if (targetFailed && !targetTimedOut) criticalFailedPaths.push(config.targets)
-    if (targetTimedOut) criticalTimedOutPaths.push(config.targets)
     return {
       requestedCount,
       loadedCount,
@@ -218,9 +221,15 @@ ${criticalAssetDiagnostics
   }
 
   const updateLoadingUi = (current) => {
-    if (uiDismissed) return
     const panel = root.querySelector('#page2-loading-status')
     if (!panel) return
+    const loadingVisible = entryState.targetFound
+      && entryState.pendingEnter
+      && !entryState.moduleEntered
+    if (uiDismissed || !loadingVisible) {
+      panel.hidden = true
+      return
+    }
     panel.querySelector('.page2-loading-copy strong').textContent = '正在加载《龙脉探源》'
     panel.querySelector('.page2-loading-copy span').textContent = '核心资源就绪后将自动进入'
     const detail = panel.querySelector('[data-page2-loading-detail]')
@@ -317,58 +326,12 @@ error: ${error?.message || String(error)}`, error)
     return promise
   }
 
-  const preloadTargets = async () => {
-    const controller = new AbortController()
-    const loadStartedAt = performance.now()
-    try {
-      status.set(TARGETS_TASK, 'loading')
-      emit()
-      const response = await withTimeout(
-        fetch(config.targets, { cache: 'force-cache', signal: controller.signal }),
-        ASSET_TIMEOUTS.targetFetchMs,
-        `[page2] targets.mind 加载超时：${config.targets}`,
-        config.targets,
-        () => controller.abort(),
-      )
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const buffer = await response.arrayBuffer()
-      if (buffer.byteLength <= 0) throw new Error('targets.mind is empty')
-      targetReady = true
-      targetFailed = false
-      targetTimedOut = false
-      status.set(TARGETS_TASK, 'ready')
-      evaluateCriticalMilestones()
-      emit()
-      console.info(`PAGE2 ASSET SUCCESS:
-name: ${TARGETS_TASK}
-load time: ${Math.round(performance.now() - loadStartedAt)} ms
-width: n/a
-height: n/a
-byteLength: ${buffer.byteLength}`)
-      return { byteLength: buffer.byteLength }
-    } catch (error) {
-      targetFailed = true
-      targetTimedOut = isTimeoutError(error)
-      failedKeys.add(TARGETS_TASK)
-      status.set(TARGETS_TASK, isTimeoutError(error) ? 'timedOut' : 'failed')
-      emit()
-      console.error(`PAGE2 ASSET FAILED:
-name: ${TARGETS_TASK}
-url: ${config.targets}
-error: ${error?.message || String(error)}`, error)
-      console.error('[page2] targets.mind preload failed', { url: config.targets, error })
-      throw error
-    }
-  }
-
   const runQueue = async (queue) => {
     const settledAssets = []
     const workers = Array.from({ length: Math.min(maxConcurrency, queue.length) }, async () => {
       while (!destroyed && queue.length > 0) {
         const key = queue.shift()
-        const [result] = await Promise.allSettled([
-          key === TARGETS_TASK ? preloadTargets() : preloadImage(key),
-        ])
+        const [result] = await Promise.allSettled([preloadImage(key)])
         settledAssets.push({ key, result })
         await nextFrame()
       }
@@ -378,7 +341,7 @@ error: ${error?.message || String(error)}`, error)
     const rejectedAssets = settledAssets.filter(({ result }) => result.status === 'rejected')
     const rejectedDetails = rejectedAssets.map(({ key, result }) => ({
         name: key,
-        url: key === TARGETS_TASK ? config.targets : config.assets[key],
+        url: config.assets[key],
         error: result.reason?.message || String(result.reason),
       }))
     console.info(`PAGE2 ALLSETTLED RESULT:
@@ -389,9 +352,9 @@ rejected数量: ${rejectedAssets.length}
 
   const criticalQueue = [
     'background',
+    'floor',
     'title',
-    TARGETS_TASK,
-    ...PAGE2_CRITICAL_IMAGE_KEYS.filter((key) => !['background', 'title'].includes(key)),
+    'mainBase',
   ]
   const session = {
     rootImage: currentBackgroundImage,
@@ -433,6 +396,20 @@ error: ${error?.message || String(error)}`, error)
       uiDismissed = false
       emit()
     },
+    setEntryState(nextState = {}) {
+      Object.assign(entryState, nextState)
+      if (entryState.pendingEnter) uiDismissed = false
+      emit()
+    },
+    resetImageForRetry(key) {
+      if (PAGE2_CRITICAL_IMAGE_KEYS.includes(key)) return false
+      imagePromises.delete(key)
+      decodedImages.delete(key)
+      failedKeys.delete(key)
+      status.set(key, 'deferred')
+      emit()
+      return true
+    },
     hideLoading() {
       const panel = root.querySelector('#page2-loading-status')
       uiDismissed = true
@@ -457,21 +434,14 @@ error: ${error?.message || String(error)}`, error)
       if (!retryQueue.length) return Promise.resolve(snapshot())
       retryQueue.forEach((key) => {
         failedKeys.delete(key)
-        if (key === TARGETS_TASK) {
-          targetFailed = false
-          targetReady = false
-          targetTimedOut = false
-          status.delete(TARGETS_TASK)
-        } else {
-          imagePromises.delete(key)
-          decodedImages.delete(key)
-          loadedCriticalImages.delete(key)
-          decodedCriticalImages.delete(key)
-          criticalTextures.delete(key)
-          status.set(key, 'deferred')
-        }
+        imagePromises.delete(key)
+        decodedImages.delete(key)
+        loadedCriticalImages.delete(key)
+        decodedCriticalImages.delete(key)
+        criticalTextures.delete(key)
+        status.set(key, 'deferred')
       })
-      failedCount = Math.max(0, failedCount - retryQueue.filter((key) => key !== TARGETS_TASK).length)
+      failedCount = Math.max(0, failedCount - retryQueue.length)
       phaseMessage = '正在重试失败资源'
       uiDismissed = false
       emit()
