@@ -54,6 +54,36 @@ const hasFiniteWorldScale = (entity) => {
   )
 }
 
+const isInsideCameraView = (sceneEl, entity) => {
+  const THREE = window.AFRAME?.THREE
+  const camera = sceneEl?.camera
+  if (!THREE || !camera || !entity?.object3D) return false
+  entity.object3D.updateWorldMatrix?.(true, true)
+  camera.updateWorldMatrix?.(true, false)
+  camera.updateProjectionMatrix?.()
+  const bounds = new THREE.Box3().setFromObject(entity.object3D)
+  if (bounds.isEmpty()) return false
+  const projected = []
+  for (const x of [bounds.min.x, bounds.max.x]) {
+    for (const y of [bounds.min.y, bounds.max.y]) {
+      for (const z of [bounds.min.z, bounds.max.z]) {
+        projected.push(new THREE.Vector3(x, y, z).project(camera))
+      }
+    }
+  }
+  const values = (axis) => projected.map((point) => point[axis]).filter(Number.isFinite)
+  const xValues = values('x')
+  const yValues = values('y')
+  const zValues = values('z')
+  if (!xValues.length || !yValues.length || !zValues.length) return false
+  return Math.max(...xValues) >= -1
+    && Math.min(...xValues) <= 1
+    && Math.max(...yValues) >= -1
+    && Math.min(...yValues) <= 1
+    && Math.max(...zValues) >= -1
+    && Math.min(...zValues) <= 1
+}
+
 export function inspectFirstVisualFrame({
   sceneEl,
   entities = [],
@@ -66,6 +96,8 @@ export function inspectFirstVisualFrame({
       requireVisible = true,
       requireTexture = true,
       requireOpacity = true,
+      requireInView = true,
+      minOpacity = Number.EPSILON,
     } = descriptor
     const mappedMaterials = collectMappedMaterials(entity)
     const validMappedMaterials = mappedMaterials.filter((material) =>
@@ -78,6 +110,7 @@ export function inspectFirstVisualFrame({
       : 0
     const textureReady = validMappedMaterials.length > 0
     const scaleReady = hasFiniteWorldScale(entity)
+    const inView = isInsideCameraView(sceneEl, entity)
     return {
       id: entity?.id || '',
       mounted,
@@ -85,11 +118,13 @@ export function inspectFirstVisualFrame({
       textureReady,
       opacity,
       scaleReady,
+      inView,
       ready: mounted
         && scaleReady
         && (!requireVisible || visible)
         && (!requireTexture || textureReady)
-        && (!requireOpacity || opacity > 0),
+        && (!requireOpacity || opacity >= minOpacity)
+        && (!requireInView || inView),
     }
   })
   const anchorVisible = Boolean(isAnchorVisible())
@@ -126,17 +161,27 @@ export async function waitForFirstVisualFrame({
   sceneEl,
   entities,
   isAnchorVisible,
+  isVisualReady = () => true,
   isActive = () => true,
   signal,
   requiredFrames = 2,
 } = {}) {
   let readyFrames = 0
+  let lastRendererFrame = Number(sceneEl?.renderer?.info?.render?.frame)
   while (!signal?.aborted && isActive()) {
     if (!await nextAnimationFrame(signal)) return false
     const current = inspectFirstVisualFrame({ sceneEl, entities, isAnchorVisible })
-    readyFrames = current.ready ? readyFrames + 1 : 0
+    const rendererFrame = Number(sceneEl?.renderer?.info?.render?.frame)
+    const rendererAdvanced = !Number.isFinite(rendererFrame)
+      || !Number.isFinite(lastRendererFrame)
+      || rendererFrame !== lastRendererFrame
+    readyFrames = current.ready && isVisualReady() && rendererAdvanced
+      ? readyFrames + 1
+      : 0
+    lastRendererFrame = rendererFrame
     if (readyFrames >= requiredFrames) {
       return inspectFirstVisualFrame({ sceneEl, entities, isAnchorVisible }).ready
+        && isVisualReady()
     }
   }
   return false
