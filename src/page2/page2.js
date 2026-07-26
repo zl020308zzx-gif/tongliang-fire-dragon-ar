@@ -605,10 +605,10 @@ export function createPage2Experience({
       && isLayerTextureRenderable('mainBase')
   }
   const firstVisualEntities = [
-    { entity: backgroundPlane, minOpacity: 0.98 },
-    { entity: root.querySelector('#page2-floor-base'), minOpacity: 0.98 },
-    { entity: root.querySelector('[data-page2-asset-key="title"]'), minOpacity: 0.98 },
-    { entity: root.querySelector('[data-page2-asset-key="mainBase"]'), minOpacity: 0.98 },
+    { entity: backgroundPlane, minOpacity: 0.01 },
+    { entity: root.querySelector('#page2-floor-base'), minOpacity: 0.01 },
+    { entity: root.querySelector('[data-page2-asset-key="title"]'), minOpacity: 0.01 },
+    { entity: root.querySelector('[data-page2-asset-key="mainBase"]'), minOpacity: 0.01 },
   ]
   let firstVisualGatePromise = null
   let firstVisualGateRunId = -1
@@ -625,9 +625,7 @@ export function createPage2Experience({
       isAnchorVisible: () => tracked
         && (debug || stable.hasValidFullTransform())
         && anchor?.object3D?.visible !== false,
-      isVisualReady: () => backgroundTimelineStarted
-        && backgroundElapsed >= finiteOr(config.background.openDuration, 900, 'background.openDuration')
-        && isPage2FoundationRenderable(),
+      isVisualReady: () => backgroundTimelineStarted && isPage2FoundationRenderable(),
       isActive: () => tracked
         && !destroyed
         && !suspended
@@ -1267,12 +1265,11 @@ export function createPage2Experience({
   const startAssetLoading = () => {
     if (assetLoadingPromise || destroyed) return assetLoadingPromise
     assetLoadingPromise = (async () => {
-      await preloadSession.startCritical()
-      const results = []
-      for (const key of PAGE2_CRITICAL_IMAGE_KEYS) {
-        const [result] = await Promise.allSettled([loadAsset(key)])
-        results.push(result)
-      }
+      const criticalPreload = preloadSession.startCritical()
+      const results = await Promise.allSettled(
+        PAGE2_CRITICAL_IMAGE_KEYS.map((key) => loadAsset(key)),
+      )
+      await criticalPreload
       updateAssetReadiness()
       return results
     })()
