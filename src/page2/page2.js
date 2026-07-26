@@ -299,6 +299,7 @@ export function createPage2Experience({
   onActivate,
   onTrackingFound,
   onTrackingLost,
+  onTrackingLostConfirmed,
   onEntryStateChange,
   onAssetError,
   onFirstVisualFrameReady,
@@ -1452,6 +1453,7 @@ export function createPage2Experience({
     onLostConfirmed: (data) => {
       debugLog('targetLostConfirmed', { ...data, thresholdMs: config.rescanReplay.lostThresholdMs })
       confirmReplayAfterLoss()
+      onTrackingLostConfirmed?.(data)
       // The shared TargetLost component owns the visible notice for all modules.
       setHtmlVisible(lostNotice, false)
     },

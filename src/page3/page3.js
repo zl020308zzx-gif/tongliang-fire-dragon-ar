@@ -345,6 +345,7 @@ export function createPage3Experience({
   onActivate,
   onTrackingFound,
   onTrackingLost,
+  onTrackingLostConfirmed,
   onEntryStateChange,
   onAssetError,
   onFirstVisualFrameReady,
@@ -2050,8 +2051,9 @@ export function createPage3Experience({
     signal,
     onFound: activate,
     onLost: loseTracking,
-    onLostConfirmed() {
+    onLostConfirmed(data) {
       if (!tracked && ![PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) {
+        onTrackingLostConfirmed?.(data)
         // The shared TargetLost component owns the visible notice for all modules.
         lostNotice.hidden = true
       }

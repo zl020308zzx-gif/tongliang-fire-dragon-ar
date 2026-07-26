@@ -79,7 +79,7 @@ export const PAGE3_CONFIG = {
     realCompletionFadeMs: 1000,
   },
   tracking: {
-    noticeDelayMs: 3000,
+    noticeDelayMs: 1500,
     anchorHoldMs: 1500,
     positionLerp: 0.12,
     rotationSlerp: 0.1,

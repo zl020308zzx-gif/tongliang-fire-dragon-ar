@@ -112,15 +112,15 @@ export const PAGE2_CONFIG = {
   },
   rescanReplay: {
     enabled: true,
-    lostThresholdMs: 800,
+    lostThresholdMs: 1500,
     stableDelayMs: 180,
     replayFullEntrance: true,
   },
   mindar: {
     warmupTolerance: 2,
-    missTolerance: 12,
+    missTolerance: 30,
     filterMinCF: 0.0007,
-    filterBeta: 180,
+    filterBeta: 800,
   },
   assets: {
     floor: page2Asset('background/page2-bg-full-base.jpg'),
@@ -155,7 +155,7 @@ export const PAGE2_CONFIG = {
     positionDeadzone: 0.002,
     rotationDeadzoneDeg: 0.35,
     scaleDeadzone: 0.001,
-    lostHoldDuration: 850,
+    lostHoldDuration: 1500,
     recoverDuration: 260,
   },
   background: {

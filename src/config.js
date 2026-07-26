@@ -330,7 +330,7 @@ export const PAGE1_PREVIEW_CONFIG = {
       positionDeadzone: 0.002,
       rotationDeadzoneDeg: 0.35,
       scaleDeadzone: 0.001,
-      lostHoldDuration: 850,
+      lostHoldDuration: 1500,
       recoverDuration: 300,
     },
     arPanel: {
@@ -367,7 +367,7 @@ export const PAGE1_PREVIEW_CONFIG = {
       readyRenderFrames: 2,
     },
     tracking: {
-      lostDelayMs: 800,
+      lostDelayMs: 1500,
     },
   },
   camera: {
