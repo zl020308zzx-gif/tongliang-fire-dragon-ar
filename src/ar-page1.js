@@ -16,7 +16,8 @@ import {
   sharedModuleUiMarkup,
   waitForFirstVisualFrame,
 } from './shared-module-ui.js'
-import { createModuleAssetLoader, loadImageElement, waitForMountedFrames } from './module-asset-loader.js'
+import { createModuleAssetLoader, loadImageElement } from './module-asset-loader.js'
+import { prepareAFrameImageTexture } from './aframe-texture-preloader.js'
 
 export const AR_PAGE1_STATES = Object.freeze({
   AR_NOT_STARTED: 'AR_NOT_STARTED',
@@ -110,9 +111,7 @@ export function renderArPage1(root) {
   const page3Entry = activeRoute === AR_ROUTES.PAGE3
   const collectionMode = activeRoute === AR_ROUTES.COLLECTION
   const page1Enabled = collectionMode || page1Entry
-  const page2MindarTuning = page2Entry
-    ? `; warmupTolerance: ${PAGE2_CONFIG.mindar.warmupTolerance}; missTolerance: ${PAGE2_CONFIG.mindar.missTolerance}; filterMinCF: ${PAGE2_CONFIG.mindar.filterMinCF}; filterBeta: ${PAGE2_CONFIG.mindar.filterBeta}`
-    : ''
+  const mindarTuning = `; warmupTolerance: ${PAGE2_CONFIG.mindar.warmupTolerance}; missTolerance: ${PAGE2_CONFIG.mindar.missTolerance}; filterMinCF: ${PAGE2_CONFIG.mindar.filterMinCF}; filterBeta: ${PAGE2_CONFIG.mindar.filterBeta}`
   const aspect = config.ar.markerAspectFallback
   const panelConfig = config.ar.arPanel
   const initialPanelMode = panelConfig.modes.vertical
@@ -180,7 +179,7 @@ export function renderArPage1(root) {
         <div class="page3-preload-assets">${page3Assets}</div>
       </div>
       <a-scene id="page1-ar-scene" class="preview-scene ar-scene" embedded
-        mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no${page2MindarTuning}"
+        mindar-image="imageTargetSrc: ${config.ar.targetSrc}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no${mindarTuning}"
         renderer="antialias: true; colorManagement: true; alpha: true"
         vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false"
         loading-screen="enabled: false">
@@ -414,12 +413,6 @@ export function renderArPage1(root) {
     else sharedModuleUi.deactivate()
   }
 
-  const waitFrames = async (count = 2) => {
-    for (let index = 0; index < count; index += 1) {
-      await new Promise((resolve) => requestAnimationFrame(resolve))
-    }
-  }
-
   const ensureAFrameImageReady = async (image, entity, path, reportStage = () => {}) => {
     await loadImageElement(image, path, {
       onLoaded: () => reportStage('loaded'),
@@ -429,30 +422,18 @@ export function renderArPage1(root) {
     })
     reportStage('decoded')
     if (!scene.hasLoaded) await new Promise((resolve) => scene.addEventListener('loaded', resolve, { once: true }))
-    entity.setAttribute('src', `#${image.id}`)
-    let textures = []
-    for (let attempt = 0; attempt < 8 && textures.length === 0; attempt += 1) {
-      await waitFrames(1)
-      textures = []
-      entity.object3D?.traverse((object) => {
-        const materials = Array.isArray(object.material) ? object.material : [object.material]
-        materials.filter(Boolean).forEach((material) => {
-          if (material.map) textures.push(material.map)
-        })
-      })
-    }
     if (!entity.object3D?.parent) throw new Error(`实体尚未挂载：${path}`)
-    if (textures.length === 0) throw new Error(`Three.js纹理尚未创建：${path}`)
     const transform = entity.object3D
     if (
       [...transform.position.toArray(), ...transform.scale.toArray()].some((value) => !Number.isFinite(value)) ||
       transform.scale.toArray().some((value) => Math.abs(value) <= 1e-6)
     ) throw new Error(`实体transform无效：${path}`)
-    textures.forEach((texture) => {
-      texture.needsUpdate = true
-      try { scene.renderer?.initTexture?.(texture) } catch { texture.needsUpdate = true }
+    await prepareAFrameImageTexture({
+      scene,
+      entity,
+      image,
+      assetKey: path,
     })
-    await waitForMountedFrames(() => Boolean(entity.object3D?.parent), 2)
     reportStage('gpuReady')
     return true
   }
