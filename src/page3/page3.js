@@ -460,6 +460,7 @@ export function createPage3Experience({
   let firstVisualGatePromise = null
   let firstVisualGateGeneration = 0
   let tryEnterPage3 = () => false
+  const page3ImageIdByKey = new Map(PAGE3_IMAGE_ENTRIES.map(([id, key]) => [key, id]))
 
   const syncEntryUi = () => {
     const visibility = getModuleEntryVisibility({
@@ -717,18 +718,21 @@ export function createPage3Experience({
     }
   }
 
-  const queueTextureBinding = (id, key) => {
-    if (gpuReadyAssets.has(key) || gpuBindingPromises.has(key)) return
+  const queueTextureBinding = (id, key, { force = false } = {}) => {
+    if (gpuBindingPromises.has(key)) return gpuBindingPromises.get(key)
+    if (!force && gpuReadyAssets.has(key)) return Promise.resolve(true)
     const image = root.querySelector(`#${id}`)
     const entities = [...root.querySelectorAll(`[data-page3-asset-key="${key}"]`)]
     if (!(image instanceof HTMLImageElement) || !entities.length) {
       preloaderSession.markGpuFailure(key, new Error(`[page3] 缺少纹理绑定对象：${key}`))
-      return
+      return Promise.resolve(false)
     }
-    entities.forEach((entity) => {
-      setVisible(entity, false)
-      setOpacity(entity, 0)
-    })
+    if (!force) {
+      entities.forEach((entity) => {
+        setVisible(entity, false)
+        setOpacity(entity, 0)
+      })
+    }
     const bindingGeneration = assetBindingGeneration
     const binding = gpuBindingChain
       .catch(() => {})
@@ -764,7 +768,7 @@ export function createPage3Experience({
             gpuReadyCount: gpuReadyAssets.size,
           })
         }
-        revealDeferredImage(key, entities)
+        if (!force) revealDeferredImage(key, entities)
       })
       .catch((error) => {
         if (bindingGeneration !== assetBindingGeneration) return
@@ -784,6 +788,7 @@ export function createPage3Experience({
       })
     gpuBindingPromises.set(key, binding)
     gpuBindingChain = binding
+    return binding
   }
 
   const releasePage3ImageTextures = () => {
@@ -1353,6 +1358,27 @@ export function createPage3Experience({
     effects.clear()
   }
 
+  const page3StageVisualStates = new Set([
+    PAGE3_STATES.STAGE_BUILDING,
+    PAGE3_STATES.WAIT_PEARL,
+    PAGE3_STATES.PEARL_GUIDING,
+    PAGE3_STATES.WAIT_DRAGON,
+    PAGE3_STATES.DRAGON_DANCING,
+    PAGE3_STATES.WAIT_CLIMAX,
+    PAGE3_STATES.IRONFLOWER_CLIMAX,
+    PAGE3_STATES.CLOSING,
+    PAGE3_STATES.END_OPTIONS,
+  ])
+
+  const currentFirstVisualEntities = () => {
+    const entities = [background, floor, title, drumPlane]
+      .map((entity) => ({ entity, minOpacity: 0.98 }))
+    if (page3StageVisualStates.has(state) && gpuReadyAssets.has('stageBack')) {
+      entities.push({ entity: stageBack, minOpacity: 0.01 })
+    }
+    return entities
+  }
+
   const startFirstVisualFrameGate = () => {
     if (firstVisualFrameReady) return Promise.resolve(true)
     if (firstVisualGatePromise) return firstVisualGatePromise
@@ -1361,8 +1387,7 @@ export function createPage3Experience({
     syncEntryUi()
     firstVisualGatePromise = waitForFirstVisualFrame({
       sceneEl: scene,
-      entities: [background, floor, title, drumPlane]
-        .map((entity) => ({ entity, minOpacity: 0.98 })),
+      entities: currentFirstVisualEntities(),
       isAnchorVisible: () => tracked
         && (debug || stable.hasValidFullTransform())
         && anchor?.object3D?.visible !== false,
@@ -1669,7 +1694,10 @@ export function createPage3Experience({
       criticalRenderableFrames += 1
       if (criticalRenderableFrames < config.foundation.readyRenderFrames) return false
       criticalGateOpened = true
-      stateElapsed = 0
+      stateElapsed = config.durations.placementGuideHoldMs
+      preloaderSession.loadStageAssets().catch((error) => {
+        console.warn('[page3] 舞台资源提前加载失败', error)
+      })
     }
     if (!updateFoundationGate()) return false
     return setPage3State(PAGE3_STATES.READY)
@@ -1816,6 +1844,95 @@ export function createPage3Experience({
     pointerStart = null
   }, { signal })
 
+  const textureKeysForCurrentState = () => {
+    const keys = new Set(PAGE3_CRITICAL_IMAGE_KEYS)
+    if (page3StageVisualStates.has(state)) {
+      ;['stageBack', 'stageFront', 'stageLights'].forEach((key) => keys.add(key))
+    }
+    if ([
+      PAGE3_STATES.PEARL_GUIDING,
+      PAGE3_STATES.WAIT_DRAGON,
+      PAGE3_STATES.DRAGON_DANCING,
+      PAGE3_STATES.WAIT_CLIMAX,
+      PAGE3_STATES.IRONFLOWER_CLIMAX,
+      PAGE3_STATES.CLOSING,
+    ].includes(state)) keys.add('pearl')
+    return [...keys]
+  }
+
+  const requiredTextureKeysForCurrentState = () => {
+    const keys = new Set(PAGE3_CRITICAL_IMAGE_KEYS)
+    if (page3StageVisualStates.has(state)) keys.add('stageBack')
+    if ([
+      PAGE3_STATES.PEARL_GUIDING,
+      PAGE3_STATES.WAIT_DRAGON,
+    ].includes(state)) keys.add('pearl')
+    return [...keys]
+  }
+
+  const restoreVisualsForCurrentState = () => {
+    showFoundation()
+    if (page3StageVisualStates.has(state)) {
+      setVisible(stageRoot, true)
+      setVisible(stageBack, gpuReadyAssets.has('stageBack'))
+      setVisible(stageFront, gpuReadyAssets.has('stageFront'))
+      setVisible(stageLights, gpuReadyAssets.has('stageLights'))
+      if (state === PAGE3_STATES.STAGE_BUILDING) {
+        updateStageBuilding()
+      } else {
+        if (gpuReadyAssets.has('stageBack')) setOpacity(stageBack, 1)
+        if (gpuReadyAssets.has('stageFront')) setOpacity(stageFront, 1)
+        if (gpuReadyAssets.has('stageLights')) {
+          setOpacity(stageLights, state === PAGE3_STATES.END_OPTIONS ? 0.18 : 0.5)
+        }
+      }
+    }
+    if ([
+      PAGE3_STATES.PEARL_GUIDING,
+      PAGE3_STATES.WAIT_DRAGON,
+      PAGE3_STATES.DRAGON_DANCING,
+      PAGE3_STATES.WAIT_CLIMAX,
+      PAGE3_STATES.IRONFLOWER_CLIMAX,
+      PAGE3_STATES.CLOSING,
+    ].includes(state)) {
+      setVisible(pearlRoot, gpuReadyAssets.has('pearl'))
+      if (gpuReadyAssets.has('pearl')) setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 1)
+    }
+    if ([
+      PAGE3_STATES.DRAGON_DANCING,
+      PAGE3_STATES.WAIT_CLIMAX,
+      PAGE3_STATES.IRONFLOWER_CLIMAX,
+      PAGE3_STATES.CLOSING,
+    ].includes(state)) setVisible(dragonPlane, true)
+    if ([PAGE3_STATES.IRONFLOWER_CLIMAX, PAGE3_STATES.CLOSING].includes(state)) {
+      setVisible(ironflowerPlane, true)
+    }
+    foundationReady = true
+  }
+
+  const rewarmCurrentVisualTextures = async (restoreGeneration) => {
+    const snapshot = preloaderSession.getSnapshot()
+    const keys = textureKeysForCurrentState().filter((key) =>
+      ['decoded', 'gpuReady'].includes(snapshot.status.get(key)))
+    await Promise.all(keys.map((key) => {
+      const id = page3ImageIdByKey.get(key)
+      return id ? queueTextureBinding(id, key, { force: true }) : Promise.resolve(false)
+    }))
+    if (
+      destroyed
+      || suspended
+      || !tracked
+      || restoreGeneration !== firstVisualGateGeneration
+    ) return false
+    const missingRequired = requiredTextureKeysForCurrentState()
+      .filter((key) => !gpuReadyAssets.has(key))
+    if (missingRequired.length) {
+      throw new Error(`[page3] 重新识别后纹理恢复失败：${missingRequired.join('、')}`)
+    }
+    restoreVisualsForCurrentState()
+    return true
+  }
+
   const pauseForTracking = () => {
     if ([PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) return
     mediaPausedForTracking.clear()
@@ -1831,17 +1948,20 @@ export function createPage3Experience({
 
   const resumeAfterTracking = () => {
     if ([PAGE3_STATES.REAL_VIDEO, PAGE3_STATES.COMPLETE].includes(state)) return
+    const restoreGeneration = firstVisualGateGeneration
+    let restorePromise = Promise.resolve(true)
     if (![PAGE3_STATES.HIDDEN, PAGE3_STATES.LOADING].includes(state)) {
-      showFoundation()
-      ;[background, floor, title, drumPlane].forEach((entity) => {
-        entity?.object3D?.traverse?.((object) => {
-          const materials = Array.isArray(object.material) ? object.material : [object.material]
-          materials.filter(Boolean).forEach((material) => {
-            material.needsUpdate = true
-          })
+      restoreVisualsForCurrentState()
+      restorePromise = rewarmCurrentVisualTextures(restoreGeneration)
+        .then((restored) => {
+          if (restored) return startFirstVisualFrameGate()
+          return false
         })
-      })
-      foundationReady = true
+        .catch((error) => {
+          showError(error.message)
+          onAssetError?.({ message: error.message, stage: 'gpu' })
+          return false
+        })
     }
     mediaPausedForTracking.forEach((media) => {
       const path = media.dataset.page3Src || media.currentSrc
@@ -1849,6 +1969,7 @@ export function createPage3Experience({
     })
     mediaPausedForTracking.clear()
     updateDrumEnabled()
+    return restorePromise
   }
 
   const activate = () => {
@@ -1857,17 +1978,13 @@ export function createPage3Experience({
       lostStartedAt = 0
       return
     }
-    const lostDuration = lostStartedAt > 0 ? performance.now() - lostStartedAt : 0
-    const requiresVisualRestore = ![
+    const resumingVisualState = ![
       PAGE3_STATES.HIDDEN,
       PAGE3_STATES.LOADING,
       PAGE3_STATES.REAL_VIDEO,
       PAGE3_STATES.COMPLETE,
-    ].includes(state) && (
-      anchor?.object3D?.visible === false
-      || lostDuration > config.tracking.lostHoldDuration
-    )
-    if (requiresVisualRestore) {
+    ].includes(state)
+    if (resumingVisualState) {
       firstVisualGateGeneration += 1
       firstVisualGatePromise = null
       firstVisualFrameReady = false
@@ -1907,7 +2024,6 @@ export function createPage3Experience({
     } else {
       setVisible(anchor, true)
       resumeAfterTracking()
-      if (requiresVisualRestore) startFirstVisualFrameGate()
     }
     syncEntryUi()
     renderDebug()
