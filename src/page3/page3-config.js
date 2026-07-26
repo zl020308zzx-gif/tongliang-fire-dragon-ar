@@ -152,7 +152,11 @@ export const PAGE3_CONFIG = {
       position: [0, -0.03, 0.15],
       scale: [0.9, 0.9, 1],
     },
-    pearlPivot: { x: 0, y: 0.035, z: 0.061 },
+    pearlPivot: {
+      position: [-0.19, 0.107456, 0.121],
+      rotationDegrees: [0, 0, 30.939721],
+      scale: [0.969961, 0.969961, 0.969961],
+    },
     pearlAssetOffset: { x: 0, y: -0.035, z: 0 },
     pearlPath: [
       { x: 0.16, y: 0.03 },
@@ -163,18 +167,19 @@ export const PAGE3_CONFIG = {
     ],
     stageSafeArea: { x: 0.08, y: 0.26, width: 0.84, height: 0.34 },
     dragonVideo: {
-      position: [-0.12, -0.03, 0.052],
+      position: [0.082, 0.041, 0.052],
       width: 0.59,
       maxHeight: 0.44,
       entranceOffset: { x: -0.05, y: -0.035 },
     },
     ironflowerVideo: {
-      position: [0.26, -0.015, 0.049],
+      position: [-0.2, 0.019, 0.049],
       width: 0.36,
       maxHeight: 0.42,
     },
     stageLights: {
-      position: [0, -0.015, 0.044],
+      position: [0, 0.09, 0.044],
+      scale: [0.4, 0.4, 0.4],
       width: 0.36,
       height: 0.36,
     },

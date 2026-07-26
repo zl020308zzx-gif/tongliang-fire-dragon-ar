@@ -174,6 +174,7 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
           ${fullPlane('page3-stage-back', 'stageBack', config, config.z.stageBack, config.renderOrder.stageBack)}
           <a-image id="page3-stage-lights" data-page3-asset-key="stageLights"
             position="${vector(config.layout.stageLights.position)}"
+            scale="${vector(config.layout.stageLights.scale)}"
             width="${config.layout.stageLights.width}" height="${config.layout.stageLights.height}"
             data-render-order="${config.renderOrder.lights}"
             material="shader: flat; transparent: true; alphaTest: .005; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-image>
@@ -185,11 +186,10 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
             width="${config.layout.dragonVideo.width}" height="${config.layout.dragonVideo.maxHeight}"
             data-render-order="${config.renderOrder.dragonVideo}" visible="false"
             material="shader: flat; transparent: true; alphaTest: .003; opacity: 0; depthWrite: false; depthTest: true; side: double"></a-video>
-          <a-entity id="page3-pearl-root" position="${vector([
-            config.layout.pearlPivot.x,
-            config.layout.pearlPivot.y,
-            config.layout.pearlPivot.z,
-          ])}" visible="false">
+          <a-entity id="page3-pearl-root"
+            position="${vector(config.layout.pearlPivot.position)}"
+            rotation="${vector(config.layout.pearlPivot.rotationDegrees)}"
+            scale="${vector(config.layout.pearlPivot.scale)}" visible="false">
             ${fullPlane(
               'page3-pearl-plane',
               'pearl',
@@ -414,11 +414,11 @@ export function createPage3Experience({
   )
   const baseDragonPosition = new THREE.Vector3(...config.layout.dragonVideo.position)
   const baseIronPosition = new THREE.Vector3(...config.layout.ironflowerVideo.position)
-  const basePearlPosition = new THREE.Vector3(
-    config.layout.pearlPivot.x,
-    config.layout.pearlPivot.y,
-    config.layout.pearlPivot.z,
+  const basePearlPosition = new THREE.Vector3(...config.layout.pearlPivot.position)
+  const basePearlRotation = new THREE.Euler(
+    ...config.layout.pearlPivot.rotationDegrees.map(THREE.MathUtils.degToRad),
   )
+  const basePearlScale = new THREE.Vector3(...config.layout.pearlPivot.scale)
   const baseDrumScale = new THREE.Vector3(...config.layout.drumPivot.scale)
 
   let state = PAGE3_STATES.HIDDEN
@@ -1355,7 +1355,8 @@ export function createPage3Experience({
       scale: config.layout.drumPivot.scale,
     })
     pearlRoot.object3D.position.copy(basePearlPosition)
-    pearlRoot.object3D.scale.setScalar(1)
+    pearlRoot.object3D.rotation.copy(basePearlRotation)
+    pearlRoot.object3D.scale.copy(basePearlScale)
     dragonPlane.object3D.position.copy(baseDragonPosition)
     dragonPlane.object3D.scale.setScalar(1)
     ironflowerPlane.object3D.position.copy(baseIronPosition)
@@ -2164,13 +2165,17 @@ export function createPage3Experience({
       basePearlPosition.y + point.y + bob,
       basePearlPosition.z,
     )
-    pearlRoot.object3D.rotation.z += delta * 0.00018
+    pearlRoot.object3D.rotation.set(
+      basePearlRotation.x,
+      basePearlRotation.y,
+      basePearlRotation.z + stateElapsed * 0.00018,
+    )
     const entrance = clamp(stateElapsed / 600)
     const overshoot = entrance < 0.7
       ? lerp(0.5, 1.1, easeOutCubic(entrance / 0.7))
       : lerp(1.1, 1, (entrance - 0.7) / 0.3)
     const pulse = 1 + Math.sin(stateElapsed * 0.006) * 0.04
-    pearlRoot.object3D.scale.setScalar(overshoot * pulse)
+    pearlRoot.object3D.scale.copy(basePearlScale).multiplyScalar(overshoot * pulse)
     setOpacity(pearlPlane, entrance)
     if (Math.floor(stateElapsed / 180) !== Math.floor((stateElapsed - delta) / 180)) {
       effects.burst(2, {
