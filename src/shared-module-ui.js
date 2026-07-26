@@ -202,8 +202,8 @@ export const sharedModuleUiMarkup = () => `
     <strong class="module-loading-title" data-module-loading-title>正在加载</strong>
     <p data-module-loading-stage>正在请求基础资源</p>
     <div class="module-loading-network-hint">
-      <p>请保持网络畅通</p>
-      <p>如果页面长时间无变化，请刷新网页</p>
+      <p>首次体验加载较慢，请保持网络畅通</p>
+      <p>若长时间页面无变化，请刷新网页</p>
     </div>
     <small data-module-loading-resource></small>
     <i class="module-loading-track"><b data-module-loading-bar></b></i>
