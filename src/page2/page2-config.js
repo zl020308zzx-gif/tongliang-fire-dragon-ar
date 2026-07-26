@@ -110,6 +110,12 @@ export const PAGE2_CONFIG = {
     opacity: 1,
     renderOrder: SHARED_FOLDOUT_LAYOUT.floor.renderOrder,
   },
+  seamFiller: {
+    size: [...SHARED_FOLDOUT_LAYOUT.seamFiller.size],
+    position: [...SHARED_FOLDOUT_LAYOUT.seamFiller.position],
+    rotationDegrees: [...SHARED_FOLDOUT_LAYOUT.seamFiller.rotationDegrees],
+    color: SHARED_FOLDOUT_LAYOUT.seamFiller.color,
+  },
   rescanReplay: {
     enabled: true,
     lostThresholdMs: 800,
