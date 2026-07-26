@@ -317,6 +317,7 @@ export function createPage2Experience({
   const guideTitle = guide.querySelector('strong')
   const guideText = guide.querySelector('p')
   const overviewHint = root.querySelector('.page2-overview-hint')
+  const overviewHintDefaultText = overviewHint?.textContent || '点击进入火龙探索'
   const modelControls = root.querySelector('.page2-model-controls')
   const modelHint = root.querySelector('.page2-model-hint')
   const infoCard = root.querySelector('.page2-info-card')
@@ -357,6 +358,8 @@ export function createPage2Experience({
   let replayGuideTimer = 0
   let modelIdleHandle = 0
   let modelFallbackTimer = 0
+  let modelTransitionPending = false
+  let beginModelTransition = () => false
   let performanceSampleElapsed = 0
   let performanceSampleFrames = 0
   const bindingQueue = []
@@ -658,10 +661,14 @@ export function createPage2Experience({
       debugLog('page2ModelLoaded', true)
       updateReadinessDebug()
       renderDebugOutput()
+      if (modelTransitionPending && state === PAGE2_STATES.OVERVIEW && tracked && !suspended) {
+        queueMicrotask(() => beginModelTransition())
+      }
     },
     onEntranceComplete() {
       particles.settle()
       setState(PAGE2_STATES.MODEL)
+      if (modelHint) modelHint.textContent = '单指拖动旋转｜双指缩放｜点击光点查看结构'
       enableModelUi(true)
       updateCompleteButton()
     },
@@ -681,7 +688,12 @@ export function createPage2Experience({
       if (count >= config.hotspots.minimumViewed) completeButton.classList.add('is-ready')
     },
     onBlankSelected: closeCard,
-    onLoadError: showError,
+    onLoadError(message) {
+      modelTransitionPending = false
+      if (overviewHint) overviewHint.textContent = overviewHintDefaultText
+      setHtmlVisible(overviewHint, true)
+      showError(message)
+    },
     onDebugChanged(data) {
       if (selectedCardId && data.selectedScreenPoint) {
         infoCard.style.setProperty('--hotspot-screen-y', `${data.selectedScreenPoint.y}px`)
@@ -719,6 +731,7 @@ export function createPage2Experience({
     onExitComplete() {
       setState(PAGE2_STATES.MODEL_ENTERING)
       particles.startBurst()
+      enableModelUi(true)
       model.startEntrance()
     },
     onRestoreComplete() {
@@ -827,6 +840,8 @@ export function createPage2Experience({
     entranceTimelineActive = false
     backgroundTimelineStarted = false
     entranceFramePending = false
+    modelTransitionPending = false
+    if (overviewHint) overviewHint.textContent = overviewHintDefaultText
     visibilityRetryElapsed = 0
     overview.resetEntry()
     floorBase.reset(page2Runtime.entranceRunId)
@@ -861,12 +876,12 @@ export function createPage2Experience({
   }
 
   const scheduleModelPreload = () => {
-    if (page2Runtime.liteMode || page2ModelLoaded || model.isLoaded()) return
+    if (page2ModelLoaded || model.isLoaded()) return
     cancelScheduledModelPreload()
     const load = () => {
       modelIdleHandle = 0
       modelFallbackTimer = 0
-      if (!destroyed && !page2Runtime.liteMode && page2Runtime.entranceCompleted) model.preload()
+      if (!destroyed && page2Runtime.entranceCompleted) model.preload()
     }
     if (typeof window.requestIdleCallback === 'function') {
       modelIdleHandle = window.requestIdleCallback(load, { timeout: config.performance.modelIdleTimeoutMs })
@@ -1469,14 +1484,27 @@ export function createPage2Experience({
     return raycaster.intersectObject(fireHit.object3D, true).length > 0
   }
 
-  const startModelTransition = () => {
+  beginModelTransition = () => {
     if (state !== PAGE2_STATES.OVERVIEW || !tracked || suspended) return false
+    modelTransitionPending = false
+    if (overviewHint) overviewHint.textContent = overviewHintDefaultText
     setHtmlVisible(overviewHint, false)
     setState(PAGE2_STATES.MODEL_ENTERING)
     rippleElapsed = 0
     setVisible(ripple, true)
     overview.startExit()
     return true
+  }
+  const startModelTransition = () => {
+    if (state !== PAGE2_STATES.OVERVIEW || !tracked || suspended) return false
+    if (!model.isLoaded()) {
+      modelTransitionPending = true
+      model.preload()
+      if (overviewHint) overviewHint.textContent = '正在加载火龙模型…'
+      setHtmlVisible(overviewHint, true)
+      return true
+    }
+    return beginModelTransition()
   }
   const enterModel = (event) => {
     if (state !== PAGE2_STATES.OVERVIEW || !tracked || suspended) return

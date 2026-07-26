@@ -373,6 +373,7 @@ export function createPage3Experience({
   const drumPlane = root.querySelector('#page3-drum-plane')
   const drumHit = root.querySelector('#page3-drum-hit')
   const pearlRoot = root.querySelector('#page3-pearl-root')
+  const pearlPlane = root.querySelector('#page3-pearl-plane')
   const dragonPlane = root.querySelector('#page3-dragon-plane')
   const ironflowerPlane = root.querySelector('#page3-ironflower-plane')
   const dragonVideo = root.querySelector('#page3-dragon-video')
@@ -418,6 +419,7 @@ export function createPage3Experience({
     config.layout.pearlPivot.y,
     config.layout.pearlPivot.z,
   )
+  const baseDrumScale = new THREE.Vector3(...config.layout.drumPivot.scale)
 
   let state = PAGE3_STATES.HIDDEN
   let stateElapsed = 0
@@ -428,6 +430,7 @@ export function createPage3Experience({
   let drumEnabled = false
   let drumFeedbackElapsed = -1
   let drumHitCount = 0
+  let pearlActivationPending = false
   let audioUnlocked = false
   let criticalReady = false
   let deferredSettled = false
@@ -1330,6 +1333,7 @@ export function createPage3Experience({
     setVisible(drumPlane, false)
     setVisible(drumHit, false)
     setVisible(pearlRoot, false)
+    setVisible(pearlPlane, false)
     setVisible(dragonPlane, false)
     setVisible(ironflowerPlane, false)
     setOpacity(background, 0)
@@ -1340,7 +1344,7 @@ export function createPage3Experience({
     setOpacity(stageLights, 0)
     setOpacity(dragonPlane, 0)
     setOpacity(ironflowerPlane, 0)
-    setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 0)
+    setOpacity(pearlPlane, 0)
     setOpacity(cloudBack, 0)
     setOpacity(cloudMiddle, 0)
     setOpacity(cloudFront, 0)
@@ -1449,6 +1453,7 @@ export function createPage3Experience({
     const nextEnabled =
       tracked &&
       !suspended &&
+      !pearlActivationPending &&
       (
         (
           state === PAGE3_STATES.READY &&
@@ -1595,6 +1600,9 @@ export function createPage3Experience({
         gpuReadyCount: gpuReadyAssets.size,
       })
       preloaderSession.loadStageAssets().catch((error) => showError(error.message))
+      preloaderSession.loadPearlAsset().catch((error) => {
+        console.warn('[page3] 龙珠素材预取失败，将在第二次击鼓时重试', error)
+      })
       preloaderSession.loadDrumAudio().catch((error) => {
         console.warn('[page3] 战鼓音效后台加载失败', error)
       })
@@ -1609,8 +1617,11 @@ export function createPage3Experience({
     } else if (state === PAGE3_STATES.PEARL_GUIDING) {
       preloaderSession.loadDragonAssets().catch((error) => showError(error.message))
       preloaderSession.loadClimaxAssets().catch((error) => showError(error.message))
-      setVisible(pearlRoot, true)
-      setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 0)
+      setVisible(pearlRoot, gpuReadyAssets.has('pearl'))
+      if (gpuReadyAssets.has('pearl')) {
+        setVisible(pearlPlane, true)
+        setOpacity(pearlPlane, 0)
+      }
     } else if (state === PAGE3_STATES.DRAGON_DANCING) {
       setVisible(dragonPlane, true)
       setOpacity(dragonPlane, 0)
@@ -1650,6 +1661,7 @@ export function createPage3Experience({
       setVisible(dragonPlane, false)
       setVisible(ironflowerPlane, false)
       setVisible(pearlRoot, false)
+      setVisible(pearlPlane, false)
       setOpacity(stageLights, 0.18)
       effects.clear()
     } else if (state === PAGE3_STATES.REAL_VIDEO) {
@@ -1729,11 +1741,29 @@ export function createPage3Experience({
         console.warn('[page3] 战鼓音效加载失败，继续舞台流程', error)
       })
       preloaderSession.loadDragonAssets().catch((error) => showError(error.message))
+      preloaderSession.loadPearlAsset().catch((error) => {
+        console.warn('[page3] 龙珠素材预取失败，将在第二次击鼓时重试', error)
+      })
     }
     playDrumSound()
     playDrumFeedback()
     if (state === PAGE3_STATES.READY) setPage3State(PAGE3_STATES.STAGE_BUILDING)
-    else if (state === PAGE3_STATES.WAIT_PEARL) setPage3State(PAGE3_STATES.PEARL_GUIDING)
+    else if (state === PAGE3_STATES.WAIT_PEARL) {
+      pearlActivationPending = true
+      updateDrumEnabled()
+      preloaderSession.loadPearlAsset().then(() => {
+        if (destroyed || suspended || !tracked || state !== PAGE3_STATES.WAIT_PEARL) return
+        setVisible(pearlRoot, true)
+        setVisible(pearlPlane, true)
+        setOpacity(pearlPlane, 0)
+        setPage3State(PAGE3_STATES.PEARL_GUIDING)
+      }).catch((error) => {
+        if (!destroyed) showError(error.message)
+      }).finally(() => {
+        pearlActivationPending = false
+        updateDrumEnabled()
+      })
+    }
     else if (state === PAGE3_STATES.WAIT_DRAGON) setPage3State(PAGE3_STATES.DRAGON_DANCING)
     else if (state === PAGE3_STATES.WAIT_CLIMAX) setPage3State(PAGE3_STATES.IRONFLOWER_CLIMAX)
     renderDebug()
@@ -1751,6 +1781,7 @@ export function createPage3Experience({
     completeScreen.hidden = true
     realVideoMessage.hidden = true
     drumHitCount = 0
+    pearlActivationPending = false
     lostNotice.hidden = true
     hideError()
     setVisible(anchor, true)
@@ -1895,7 +1926,8 @@ export function createPage3Experience({
       PAGE3_STATES.CLOSING,
     ].includes(state)) {
       setVisible(pearlRoot, gpuReadyAssets.has('pearl'))
-      if (gpuReadyAssets.has('pearl')) setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 1)
+      setVisible(pearlPlane, gpuReadyAssets.has('pearl'))
+      if (gpuReadyAssets.has('pearl')) setOpacity(pearlPlane, 1)
     }
     if ([
       PAGE3_STATES.DRAGON_DANCING,
@@ -2088,16 +2120,18 @@ export function createPage3Experience({
           break
         }
       }
-      drumRoot.object3D.scale.setScalar(scale)
+      drumRoot.object3D.scale.copy(baseDrumScale).multiplyScalar(scale)
       if (progress >= 1) {
         drumFeedbackElapsed = -1
-        drumRoot.object3D.scale.setScalar(1)
+        drumRoot.object3D.scale.copy(baseDrumScale)
       }
     } else if (drumEnabled) {
       const pulse = (Math.sin((performance.now() / config.drum.idlePeriodMs) * Math.PI * 2) + 1) / 2
-      drumRoot.object3D.scale.setScalar(lerp(config.drum.idleScaleMin, config.drum.idleScaleMax, pulse))
+      drumRoot.object3D.scale.copy(baseDrumScale).multiplyScalar(
+        lerp(config.drum.idleScaleMin, config.drum.idleScaleMax, pulse),
+      )
     } else {
-      drumRoot.object3D.scale.setScalar(1)
+      drumRoot.object3D.scale.copy(baseDrumScale)
     }
   }
 
@@ -2137,7 +2171,7 @@ export function createPage3Experience({
       : lerp(1.1, 1, (entrance - 0.7) / 0.3)
     const pulse = 1 + Math.sin(stateElapsed * 0.006) * 0.04
     pearlRoot.object3D.scale.setScalar(overshoot * pulse)
-    setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), entrance)
+    setOpacity(pearlPlane, entrance)
     if (Math.floor(stateElapsed / 180) !== Math.floor((stateElapsed - delta) / 180)) {
       effects.burst(2, {
         x: pearlRoot.object3D.position.x,
@@ -2188,7 +2222,7 @@ export function createPage3Experience({
     pearlRoot.object3D.position.lerpVectors(basePearlPosition, new THREE.Vector3(0.02, -0.02, basePearlPosition.z), gather)
     setOpacity(dragonPlane, 1 - fade)
     setOpacity(ironflowerPlane, 1 - fade)
-    setOpacity(pearlRoot.querySelector('#page3-pearl-plane'), 1 - fade)
+    setOpacity(pearlPlane, 1 - fade)
     setOpacity(stageLights, lerp(0.7, 0.2, clamp(stateElapsed / config.durations.closingMs)))
     if (stateElapsed >= 2600 && !stateFlags.has('closing-ripple')) {
       stateFlags.add('closing-ripple')
@@ -2412,6 +2446,7 @@ export function createPage3Experience({
       completeScreen.hidden = true
       realVideoMessage.hidden = true
       drumHitCount = 0
+      pearlActivationPending = false
       hideError()
       root.querySelector('.page1-ar')?.classList.remove('is-page3-active')
       lostNotice.hidden = true

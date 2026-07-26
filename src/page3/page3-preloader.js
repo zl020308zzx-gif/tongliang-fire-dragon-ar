@@ -292,6 +292,12 @@ export function createPage3Preloader({ root, config, debug = false }) {
     return stagePromise
   }
 
+  const loadPearlAsset = async () => {
+    await loadImage('pearl')
+    await waitForGpuReady('pearl')
+    return snapshot()
+  }
+
   const loadDrumAudio = () => {
     if (!drumAudioPromise) drumAudioPromise = loadMedia('drumSfx')
     return drumAudioPromise
@@ -369,6 +375,7 @@ export function createPage3Preloader({ root, config, debug = false }) {
     startCritical,
     loadCritical: startCritical,
     loadStageAssets,
+    loadPearlAsset,
     loadDrumAudio,
     loadDragonAssets,
     loadClimaxAssets,
