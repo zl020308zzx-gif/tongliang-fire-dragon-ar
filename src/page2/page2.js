@@ -623,12 +623,10 @@ export function createPage2Experience({
     firstVisualGatePromise = waitForFirstVisualFrame({
       sceneEl: scene,
       entities: firstVisualEntities,
-      isAnchorVisible: () => tracked
-        && (debug || stable.hasValidFullTransform())
+      isAnchorVisible: () => (debug || stable.hasValidFullTransform())
         && anchor?.object3D?.visible !== false,
       isVisualReady: () => backgroundTimelineStarted && isPage2FoundationRenderable(),
-      isActive: () => tracked
-        && !destroyed
+      isActive: () => !destroyed
         && !suspended
         && runId === page2Runtime.entranceRunId,
       signal,
@@ -1379,7 +1377,10 @@ export function createPage2Experience({
       if ([PAGE2_STATES.MODEL, PAGE2_STATES.COMPLETE].includes(state)) enableModelUi(true)
       setHtmlVisible(completeCard, state === PAGE2_STATES.COMPLETE)
       if (state === PAGE2_STATES.GUIDE) maybeStartPage2Entrance()
-      if (state === PAGE2_STATES.OVERVIEW_ENTERING) maybeStartBackgroundTimeline()
+      if (state === PAGE2_STATES.OVERVIEW_ENTERING) {
+        maybeStartBackgroundTimeline()
+        startFirstVisualFrameGate()
+      }
       syncEntryUi()
       updateReadinessDebug()
       return

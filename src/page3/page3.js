@@ -1389,12 +1389,10 @@ export function createPage3Experience({
     firstVisualGatePromise = waitForFirstVisualFrame({
       sceneEl: scene,
       entities: currentFirstVisualEntities(),
-      isAnchorVisible: () => tracked
-        && (debug || stable.hasValidFullTransform())
+      isAnchorVisible: () => (debug || stable.hasValidFullTransform())
         && anchor?.object3D?.visible !== false,
       isVisualReady: () => foundationReady,
-      isActive: () => tracked
-        && !destroyed
+      isActive: () => !destroyed
         && !suspended
         && gateGeneration === firstVisualGateGeneration,
       signal,
@@ -1985,10 +1983,9 @@ export function createPage3Experience({
       PAGE3_STATES.REAL_VIDEO,
       PAGE3_STATES.COMPLETE,
     ].includes(state)
-    if (resumingVisualState) {
+    if (resumingVisualState && !firstVisualFrameReady) {
       firstVisualGateGeneration += 1
       firstVisualGatePromise = null
-      firstVisualFrameReady = false
       foundationVisibleRequested = true
     }
     suspended = false

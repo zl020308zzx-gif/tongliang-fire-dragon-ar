@@ -1,5 +1,6 @@
 import { PAGE1_PREVIEW_CONFIG } from './config.js'
 import { createArUiController } from './ar-ui-controller.js'
+import { createArLayoutTuner } from './ar-layout-tuner.js'
 import { initializePage1Controller } from './page1-controller.js'
 import { createMarkerHotspot } from './marker-hotspot.js'
 import { createTargetLifecycle } from './target-lifecycle.js'
@@ -105,6 +106,7 @@ export function renderArPage1(root) {
     : null
   const page2Debug = params.get('debug') === '1' && params.get('ar') === 'page2'
   const page3Debug = params.get('debug') === '1' && params.get('ar') === 'page3'
+  const layoutTunerEnabled = params.get('layout') === '1'
   const activeRoute = resolveActiveRoute()
   const page1Entry = activeRoute === AR_ROUTES.PAGE1
   const page2Entry = activeRoute === AR_ROUTES.PAGE2
@@ -346,6 +348,9 @@ export function renderArPage1(root) {
   const hotspotVisual = root.querySelector('#marker-hotspot-visual')
   const startActionButton = root.querySelector('[data-ar-action="start"]')
   const sharedModuleUi = createSharedModuleUi({ root, signal })
+  const layoutTuner = layoutTunerEnabled
+    ? createArLayoutTuner({ root, scene, signal })
+    : null
   let arState = AR_PAGE1_STATES.AR_NOT_STARTED
   let resumeArState = AR_PAGE1_STATES.AR_NOT_STARTED
   let arReady = false
@@ -1727,6 +1732,7 @@ export function renderArPage1(root) {
     page3PreloadUnsubscribe()
     page2Controller?.destroy()
     page3Controller?.destroy()
+    layoutTuner?.destroy()
     pageCleanup()
     if (cameraStartRequested || cameraStarted) scene.systems['mindar-image-system']?.stop?.()
     cameraStartPromise = null
