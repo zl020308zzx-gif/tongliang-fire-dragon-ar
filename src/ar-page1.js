@@ -1347,7 +1347,8 @@ export function renderArPage1(root) {
         arBridge.hideHints?.('已切换至第二页识别图')
       },
       onTrackingFound: () => sharedModuleUi.hideLost(1),
-      onTrackingLost: () => sharedModuleUi.showLost(1),
+      onTrackingLost: () => sharedModuleUi.hideLost(1),
+      onTrackingLostConfirmed: () => sharedModuleUi.showLost(1),
       onEntryStateChange: () => showModuleLoader(
         1,
         page2Preloader.getSnapshot(),
@@ -1416,7 +1417,8 @@ export function renderArPage1(root) {
         arBridge.hideHints?.('已切换至第三页识别图')
       },
       onTrackingFound: () => sharedModuleUi.hideLost(2),
-      onTrackingLost: () => sharedModuleUi.showLost(2),
+      onTrackingLost: () => sharedModuleUi.hideLost(2),
+      onTrackingLostConfirmed: () => sharedModuleUi.showLost(2),
       onEntryStateChange: () => showModuleLoader(
         2,
         page3Preloader.getSnapshot(),
@@ -1584,7 +1586,7 @@ export function renderArPage1(root) {
         panelController.pause()
         if (craftStarted) arBridge.pauseTracking?.()
         setArState(AR_PAGE1_STATES.TRACKING_PAUSED)
-        sharedModuleUi.showLost(0)
+        sharedModuleUi.hideLost(0)
         arBridge.hideHints?.('targetLost或追踪暂停')
         updateTrackingDebug()
       },
