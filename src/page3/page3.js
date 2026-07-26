@@ -133,6 +133,11 @@ export function page3SceneMarkup(config = PAGE3_CONFIG, debug = false) {
           </a-entity>
         </a-entity>
 
+        <a-box id="page3-foldout-seam"
+          width="${config.layout.seamFiller.size[0]}" height="${config.layout.seamFiller.size[1]}" depth="${config.layout.seamFiller.size[2]}"
+          position="${vector(config.layout.seamFiller.position)}" rotation="${vector(config.layout.seamFiller.rotationDegrees)}"
+          material="shader: flat; color: ${config.layout.seamFiller.color}; transparent: false; depthWrite: true; depthTest: true"></a-box>
+
         <a-entity id="page3-background-root" visible="false"
           position="${vector(config.layout.backboardHinge.position)}"
           rotation="${vector(config.layout.backboardHinge.rotationStartDegrees)}"
