@@ -110,12 +110,6 @@ export const PAGE3_CONFIG = {
       scale: cloneVector(SHARED_FOLDOUT_LAYOUT.floor.scale),
       renderOrder: SHARED_FOLDOUT_LAYOUT.floor.renderOrder,
     },
-    seamFiller: {
-      size: cloneVector(SHARED_FOLDOUT_LAYOUT.seamFiller.size),
-      position: cloneVector(SHARED_FOLDOUT_LAYOUT.seamFiller.position),
-      rotationDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.seamFiller.rotationDegrees),
-      color: SHARED_FOLDOUT_LAYOUT.seamFiller.color,
-    },
     backboardHinge: {
       position: cloneVector(SHARED_FOLDOUT_LAYOUT.backboardHinge.position),
       rotationStartDegrees: cloneVector(SHARED_FOLDOUT_LAYOUT.backboardHinge.rotationStartDegrees),

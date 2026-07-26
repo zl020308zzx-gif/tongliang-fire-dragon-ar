@@ -366,12 +366,6 @@ export const PAGE1_PREVIEW_CONFIG = {
       renderOrder: SHARED_FOLDOUT_LAYOUT.floor.renderOrder,
       readyRenderFrames: 2,
     },
-    seamFiller: {
-      size: [...SHARED_FOLDOUT_LAYOUT.seamFiller.size],
-      position: [...SHARED_FOLDOUT_LAYOUT.seamFiller.position],
-      rotation: [...SHARED_FOLDOUT_LAYOUT.seamFiller.rotationDegrees],
-      color: SHARED_FOLDOUT_LAYOUT.seamFiller.color,
-    },
     tracking: {
       lostDelayMs: 800,
     },
