@@ -130,9 +130,9 @@ export const PAGE3_CONFIG = {
       scale: [1, 1, 1],
     },
     drumPivot: {
-      position: [0, -0.4, 0.3],
+      position: [0, -0.07, 0.3],
       rotationDegrees: [90, 0, 0],
-      scale: [1, 1, 1],
+      scale: [1.019695, 1.019695, 1.019695],
     },
     drumAssetOffset: { x: 0, y: 0.49, z: 0 },
     drumHotspot: {

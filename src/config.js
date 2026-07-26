@@ -359,7 +359,7 @@ export const PAGE1_PREVIEW_CONFIG = {
     floor: {
       width: SHARED_FOLDOUT_LAYOUT.floor.width,
       height: SHARED_FOLDOUT_LAYOUT.floor.depth,
-      position: [...SHARED_FOLDOUT_LAYOUT.floor.position],
+      position: [0, 0, 0.141],
       rotation: [...SHARED_FOLDOUT_LAYOUT.floor.rotationDegrees],
       scale: [...SHARED_FOLDOUT_LAYOUT.floor.scale],
       opacity: 1,
