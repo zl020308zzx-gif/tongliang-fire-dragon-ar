@@ -50,7 +50,6 @@ const resolvePage2Config = (config) => {
     mainVisual: { ...PAGE2_CONFIG.mainVisual, ...(source.mainVisual || {}) },
     fireEntryHotspot: { ...PAGE2_CONFIG.fireEntryHotspot, ...(source.fireEntryHotspot || {}) },
     floorBase: { ...PAGE2_CONFIG.floorBase, ...(source.floorBase || {}) },
-    seamFiller: { ...PAGE2_CONFIG.seamFiller, ...(source.seamFiller || {}) },
     rescanReplay: { ...PAGE2_CONFIG.rescanReplay, ...(source.rescanReplay || {}) },
     mindar: { ...PAGE2_CONFIG.mindar, ...(source.mindar || {}) },
     spatial: { ...PAGE2_CONFIG.spatial, ...(source.spatial || {}) },
@@ -99,10 +98,6 @@ export function page2SceneMarkup(inputConfig = PAGE2_CONFIG, debug = false) {
     </a-entity>
     <a-entity id="page2-anchor" visible="false">
       <a-entity id="page2-floor-base" data-page2-floor-base visible="false"></a-entity>
-      <a-box id="page2-foldout-seam"
-        width="${config.seamFiller.size[0]}" height="${config.seamFiller.size[1]}" depth="${config.seamFiller.size[2]}"
-        position="${config.seamFiller.position.join(' ')}" rotation="${config.seamFiller.rotationDegrees.join(' ')}"
-        material="shader: flat; color: ${config.seamFiller.color}; transparent: false; depthWrite: true; depthTest: true"></a-box>
       <a-entity id="page2-background-root" visible="false" position="${hinge.x} ${hinge.y} ${hinge.z}"
         rotation="${config.background.startRotationX} 0 0">
         <a-entity id="page2-board-center" position="0 ${height / 2} 0">

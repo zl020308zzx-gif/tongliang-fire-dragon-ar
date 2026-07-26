@@ -199,10 +199,6 @@ export function renderArPage1(root) {
             scale="${vector(config.ar.floor.scale)}" data-render-order="${config.ar.floor.renderOrder}"
             material="shader: flat; transparent: true; alphaTest: 0.005; opacity: ${config.ar.floor.opacity}; depthWrite: true; depthTest: true; side: double"
             visible="false"></a-image>
-          <a-box id="page1-foldout-seam"
-            width="${config.ar.seamFiller.size[0]}" height="${config.ar.seamFiller.size[1]}" depth="${config.ar.seamFiller.size[2]}"
-            position="${vector(config.ar.seamFiller.position)}" rotation="${vector(config.ar.seamFiller.rotation)}"
-            material="shader: flat; color: ${config.ar.seamFiller.color}; transparent: false; depthWrite: true; depthTest: true"></a-box>
           <a-entity id="panelHinge" position="${vector(panelHingePosition)}"
             rotation="${vector(panelStartRotation)}" visible="false">
             <a-entity id="panelContent" position="${vector(panelContentPosition)}"
