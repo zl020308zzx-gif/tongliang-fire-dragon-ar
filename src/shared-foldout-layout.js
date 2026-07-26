@@ -1,8 +1,8 @@
 const markerWidthMm = 148
 const markerHeightMm = 210
 const markerAspect = markerHeightMm / markerWidthMm
-const boardWidth = 1.02
-const boardHeight = boardWidth * 1.5
+const boardWidth = 1
+const boardHeight = markerAspect
 
 export const SHARED_FOLDOUT_LAYOUT = Object.freeze({
   markerAspect,
@@ -11,7 +11,7 @@ export const SHARED_FOLDOUT_LAYOUT = Object.freeze({
   rootScale: Object.freeze([1, 1, 1]),
   floor: Object.freeze({
     // 三张底板均为 2:3 PNG，以识别卡深度为高度，避免拉伸。
-    width: markerAspect * (2 / 3),
+    width: 1,
     depth: markerAspect,
     position: Object.freeze([0, 0, 2 / markerWidthMm]),
     rotationDegrees: Object.freeze([0, 0, 0]),
